@@ -1,0 +1,13 @@
+{
+  "name": "boardgame",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter forgod dev",
+    "build": "pnpm --filter forgod build",
+    "lint": "pnpm --filter forgod lint"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0"
+  },
+  "packageManager": "pnpm@9.15.0"
+}
