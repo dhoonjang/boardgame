@@ -1,12 +1,14 @@
-'use client'
-
 import { useState } from 'react'
-import Link from 'next/link'
-import type { HeroClass } from '@/lib/types'
+import { Link, useNavigate } from 'react-router-dom'
+import type { HeroClass } from '@forgod/core'
+import { useGameStore } from '../store/gameStore'
 
-export default function NewGame() {
+export default function NewGamePage() {
+  const navigate = useNavigate()
+  const { createGame, isLoading, error } = useGameStore()
   const [playerCount, setPlayerCount] = useState(2)
   const [selectedClasses, setSelectedClasses] = useState<(HeroClass | null)[]>([null, null])
+  const [playerNames, setPlayerNames] = useState<string[]>(['플레이어 1', '플레이어 2'])
 
   const handleClassSelect = (playerIndex: number, heroClass: HeroClass) => {
     const newClasses = [...selectedClasses]
@@ -17,15 +19,38 @@ export default function NewGame() {
   const handlePlayerCountChange = (count: number) => {
     setPlayerCount(count)
     setSelectedClasses(Array(count).fill(null))
+    setPlayerNames(Array.from({ length: count }, (_, i) => `플레이어 ${i + 1}`))
   }
 
-  const canStartGame = selectedClasses.every((c) => c !== null)
+  const handleNameChange = (index: number, name: string) => {
+    const newNames = [...playerNames]
+    newNames[index] = name
+    setPlayerNames(newNames)
+  }
+
+  const canStartGame = selectedClasses.every((c) => c !== null) && !isLoading
+
+  const handleStartGame = async () => {
+    if (!canStartGame) return
+
+    const players = selectedClasses.map((heroClass, i) => ({
+      id: `player-${i + 1}`,
+      name: playerNames[i] || `플레이어 ${i + 1}`,
+      heroClass: heroClass as HeroClass,
+    }))
+
+    await createGame(players)
+    const { gameId } = useGameStore.getState()
+    if (gameId) {
+      navigate(`/game/${gameId}`)
+    }
+  }
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-white p-8">
       <div className="max-w-4xl mx-auto">
         <Link
-          href="/"
+          to="/"
           className="text-slate-400 hover:text-white mb-8 inline-block"
         >
           &larr; 뒤로 가기
@@ -52,10 +77,25 @@ export default function NewGame() {
           </div>
         </div>
 
+        {error && (
+          <div className="bg-red-900/50 border border-red-500 rounded-lg p-4 mb-8 text-red-200">
+            오류: {error}
+          </div>
+        )}
+
         <div className="space-y-6 mb-8">
           {Array.from({ length: playerCount }, (_, i) => (
             <div key={i} className="bg-slate-800/50 rounded-lg p-6">
-              <h2 className="text-xl font-semibold mb-4">플레이어 {i + 1}</h2>
+              <div className="flex items-center gap-4 mb-4">
+                <h2 className="text-xl font-semibold">플레이어 {i + 1}</h2>
+                <input
+                  type="text"
+                  value={playerNames[i] || ''}
+                  onChange={(e) => handleNameChange(i, e.target.value)}
+                  placeholder={`플레이어 ${i + 1} 이름`}
+                  className="flex-1 bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white placeholder-slate-400"
+                />
+              </div>
               <div className="grid grid-cols-3 gap-4">
                 <ClassButton
                   name="전사"
@@ -84,6 +124,7 @@ export default function NewGame() {
         </div>
 
         <button
+          onClick={handleStartGame}
           disabled={!canStartGame}
           className={`w-full py-4 rounded-lg font-semibold text-xl transition-all ${
             canStartGame
@@ -91,7 +132,7 @@ export default function NewGame() {
               : 'bg-slate-700 text-slate-500 cursor-not-allowed'
           }`}
         >
-          게임 시작
+          {isLoading ? '생성 중...' : '게임 시작'}
         </button>
       </div>
     </main>

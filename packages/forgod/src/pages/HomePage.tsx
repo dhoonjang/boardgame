@@ -1,6 +1,6 @@
-import Link from 'next/link'
+import { Link } from 'react-router-dom'
 
-export default function Home() {
+export default function HomePage() {
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-white">
       <div className="container mx-auto px-4 py-16">
@@ -36,7 +36,7 @@ export default function Home() {
 
         <div className="text-center">
           <Link
-            href="/game/new"
+            to="/game/new"
             className="inline-block px-8 py-4 text-xl font-semibold bg-gradient-to-r from-holy-600 to-corrupt-600 rounded-lg hover:from-holy-500 hover:to-corrupt-500 transition-all shadow-lg hover:shadow-xl"
           >
             게임 시작
