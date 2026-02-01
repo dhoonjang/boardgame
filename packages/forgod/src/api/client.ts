@@ -203,16 +203,24 @@ export const api = {
       { method: 'DELETE' }
     ),
 
-  // 가능한 액션 조회 (플레이어별)
-  getValidActions: (gameId: string, playerId: string) =>
-    request<ValidActionsResponse>(`/api/games/${gameId}/players/${playerId}/actions`),
+  // 가능한 액션 조회
+  getValidActions: (gameId: string, playerId?: string) => {
+    const url = playerId
+      ? `/api/games/${gameId}/valid-actions?playerId=${encodeURIComponent(playerId)}`
+      : `/api/games/${gameId}/valid-actions`
+    return request<ValidActionsResponse>(url)
+  },
 
-  // 액션 실행 (플레이어별)
-  executeAction: (gameId: string, playerId: string, action: GameAction) =>
-    request<ExecuteActionResponse>(`/api/games/${gameId}/players/${playerId}/actions`, {
+  // 액션 실행
+  executeAction: (gameId: string, action: GameAction, playerId?: string) => {
+    const url = playerId
+      ? `/api/games/${gameId}/actions?playerId=${encodeURIComponent(playerId)}`
+      : `/api/games/${gameId}/actions`
+    return request<ExecuteActionResponse>(url, {
       method: 'POST',
-      body: JSON.stringify({ action }),
-    }),
+      body: JSON.stringify(action),
+    })
+  },
 
   // 게임 규칙 조회
   getGameRules: () =>

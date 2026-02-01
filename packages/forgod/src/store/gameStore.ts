@@ -95,7 +95,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     try {
       const [stateResult, actionsResult] = await Promise.all([
         api.getGameState(gameId, playerId),
-        api.getValidActions(gameId, playerId),
+        api.getValidActions(gameId, playerId),  // playerId는 선택적 쿼리 파라미터
       ])
 
       if (!stateResult.success || !stateResult.gameState) {
@@ -133,12 +133,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // 액션 실행
   executeAction: async (action) => {
     const { gameId, playerId } = get()
-    if (!gameId || !playerId) return
+    if (!gameId) return
 
     set({ isLoading: true, error: null })
 
     try {
-      const result = await api.executeAction(gameId, playerId, action)
+      const result = await api.executeAction(gameId, action, playerId || undefined)
 
       if (!result.success) {
         throw new Error(result.error || '액션 실행 실패')

@@ -1,14 +1,23 @@
-import { GameEngine, GameState, CreateGameOptions } from '@forgod/core'
-import { saveGame, loadGame, listActiveGames, deleteGame as dbDeleteGame } from './database'
+import { GameEngine, type GameState, type CreateGameOptions } from '@forgod/core'
+
+export interface GameSummary {
+  gameId: string
+  playerCount: number
+  roundNumber: number
+  createdAt: Date
+}
+
+interface StoredGame {
+  gameState: GameState
+  createdAt: Date
+}
 
 /**
  * 게임 세션 관리자
- *
- * 여러 게임 세션을 관리하고 게임 엔진과 상호작용합니다.
- * Supabase를 통해 게임 상태를 영구 저장합니다.
+ * 인메모리로 게임 상태를 저장하고 관리합니다.
  */
 export class SessionManager {
-  private cache: Map<string, GameSession> = new Map()
+  private games: Map<string, StoredGame> = new Map()
   private engine: GameEngine
 
   constructor() {
@@ -16,136 +25,92 @@ export class SessionManager {
   }
 
   /**
-   * 새 게임 세션을 생성합니다.
+   * 새 게임을 생성합니다.
    */
-  async createSession(options: CreateGameOptions): Promise<GameSession> {
-    const gameState = this.engine.createGame(options)
-    const session: GameSession = {
-      id: gameState.id,
-      state: gameState,
+  createGame(players: CreateGameOptions['players']): { gameId: string; gameState: GameState } {
+    const gameState = this.engine.createGame({ players })
+    const gameId = this.generateGameId()
+
+    this.games.set(gameId, {
+      gameState,
       createdAt: new Date(),
-      lastActionAt: new Date(),
-    }
+    })
 
-    // DB에 저장
-    await saveGame(gameState)
-
-    // 캐시에 저장
-    this.cache.set(session.id, session)
-
-    return session
+    return { gameId, gameState }
   }
 
   /**
-   * 세션을 조회합니다.
+   * 게임 ID로 게임 상태를 조회합니다.
    */
-  async getSession(sessionId: string): Promise<GameSession | null> {
-    // 캐시에서 먼저 확인
-    const cached = this.cache.get(sessionId)
-    if (cached) {
-      return cached
-    }
-
-    // DB에서 조회
-    const state = await loadGame(sessionId)
-    if (!state) {
-      return null
-    }
-
-    // 캐시에 저장
-    const session: GameSession = {
-      id: state.id,
-      state,
-      createdAt: new Date(), // DB에서 가져오면 정확한 시간 없음
-      lastActionAt: new Date(),
-    }
-    this.cache.set(session.id, session)
-
-    return session
+  getGame(gameId: string): GameState | null {
+    const stored = this.games.get(gameId)
+    return stored?.gameState ?? null
   }
 
   /**
-   * 모든 활성 세션을 조회합니다.
+   * 게임 상태를 업데이트합니다.
    */
-  async getAllSessions(): Promise<GameSession[]> {
-    const games = await listActiveGames()
-
-    return games.map(game => ({
-      id: game.id,
-      state: game.state,
-      createdAt: new Date(game.createdAt),
-      lastActionAt: new Date(game.updatedAt),
-    }))
-  }
-
-  /**
-   * 세션에 액션을 실행합니다.
-   * @param sessionId 세션 ID
-   * @param action 실행할 액션
-   * @param playerId 액션을 수행하는 플레이어 ID (없으면 현재 턴 플레이어)
-   */
-  async executeAction(
-    sessionId: string,
-    action: Parameters<GameEngine['executeAction']>[1],
-    playerId?: string
-  ): Promise<ReturnType<GameEngine['executeAction']> | { success: false; error: string }> {
-    const session = await this.getSession(sessionId)
-    if (!session) {
-      return { success: false, error: '세션을 찾을 수 없습니다.' }
+  updateGame(gameId: string, gameState: GameState): boolean {
+    const stored = this.games.get(gameId)
+    if (!stored) {
+      return false
     }
 
-    const result = this.engine.executeAction(session.state, action, playerId)
-    if (result.success) {
-      session.state = result.newState
-      session.lastActionAt = new Date()
+    this.games.set(gameId, {
+      ...stored,
+      gameState,
+    })
 
-      // DB에 저장
-      await saveGame(result.newState)
+    return true
+  }
 
-      // 캐시 업데이트
-      this.cache.set(session.id, session)
+  /**
+   * 게임을 삭제합니다.
+   */
+  deleteGame(gameId: string): boolean {
+    return this.games.delete(gameId)
+  }
+
+  /**
+   * 모든 게임 목록을 조회합니다.
+   */
+  listGames(): GameSummary[] {
+    const summaries: GameSummary[] = []
+
+    for (const [gameId, stored] of this.games) {
+      summaries.push({
+        gameId,
+        playerCount: stored.gameState.players.length,
+        roundNumber: stored.gameState.roundNumber,
+        createdAt: stored.createdAt,
+      })
     }
-    return result
+
+    return summaries
   }
 
   /**
-   * 세션의 유효한 액션을 조회합니다.
-   * @param sessionId 세션 ID
-   * @param playerId 액션을 조회할 플레이어 ID (없으면 현재 턴 플레이어)
+   * GameEngine 인스턴스를 반환합니다.
+   * 액션 실행 등에 사용됩니다.
    */
-  async getValidActions(sessionId: string, playerId?: string) {
-    const session = await this.getSession(sessionId)
-    if (!session) {
-      return []
+  getEngine(): GameEngine {
+    return this.engine
+  }
+
+  /**
+   * 고유한 게임 ID를 생성합니다.
+   */
+  private generateGameId(): string {
+    // 6자리 영숫자 ID 생성
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
+    let id = ''
+    for (let i = 0; i < 6; i++) {
+      id += chars[Math.floor(Math.random() * chars.length)]
     }
-    return this.engine.getValidActions(session.state, playerId)
-  }
-
-  /**
-   * 세션을 삭제합니다.
-   */
-  async deleteSession(sessionId: string): Promise<boolean> {
-    // 캐시에서 삭제
-    this.cache.delete(sessionId)
-
-    // DB에서 삭제 (상태 변경)
-    return await dbDeleteGame(sessionId)
-  }
-
-  /**
-   * 캐시를 초기화합니다.
-   */
-  clearCache(): void {
-    this.cache.clear()
+    // 중복 방지
+    if (this.games.has(id)) {
+      return this.generateGameId()
+    }
+    return id
   }
 }
-
-export interface GameSession {
-  id: string
-  state: GameState
-  createdAt: Date
-  lastActionAt: Date
-}
-
-// 싱글톤 인스턴스
-export const sessionManager = new SessionManager()

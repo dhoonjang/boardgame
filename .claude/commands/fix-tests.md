@@ -3,8 +3,7 @@
 ## 대상 패키지: $ARGUMENTS
 
 인자에 따라 실행할 테스트 명령어:
-- `core` → `pnpm test:core`
-- `server` → `pnpm test:server`
+- `forgod` → `pnpm forgod:test`
 - 인자가 없으면 사용자에게 패키지를 선택하도록 요청
 
 ## 실행 절차

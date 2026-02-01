@@ -35,7 +35,7 @@ export default function HexBoard({
   monsters,
   currentPlayerId,
   showCoords = false,
-  useDevBoard = true,  // 기본값 true로 개발 편의성 제공
+  useDevBoard = false,  // 기본값 false로 서버 데이터 사용
 }: HexBoardProps) {
   // 개발 모드에서는 로컬 GAME_BOARD 사용 (수정 시 즉시 반영)
   const boardTiles = useDevBoard ? GAME_BOARD : tiles

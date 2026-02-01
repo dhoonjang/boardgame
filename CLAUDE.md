@@ -23,7 +23,7 @@ boardgame/
 ├── packages/
 │   ├── <game>/           # 게임별 웹 UI
 │   ├── <game>-core/      # 게임별 로직 라이브러리 (순수 TypeScript)
-│   └── <game>-server/    # 게임별 MCP 서버 + HTTP API
+│   └── <game>-server/    # 게임별 HTTP API 서버 (선택)
 ├── pnpm-workspace.yaml
 └── turbo.json
 ```
@@ -33,13 +33,13 @@ boardgame/
 
 ## 패키지 구조 패턴
 
-각 게임은 3개 패키지로 구성:
+각 게임은 2~3개 패키지로 구성:
 
 | 패키지 | 역할 | 기술 스택 |
 |--------|------|-----------|
 | `<game>` | 웹 UI | Vite + React + React Router + Zustand + Tailwind |
 | `<game>-core` | 게임 로직 | 순수 TypeScript, tsup 빌드, Vitest 테스트 |
-| `<game>-server` | MCP/API 서버 | Hono + Supabase + MCP SDK |
+| `<game>-server` | HTTP API 서버 (선택) | Hono + @hono/node-server + Zod |
 
 패키지 의존성: `<game>` → `<game>-core` ← `<game>-server`
 
@@ -49,46 +49,45 @@ boardgame/
 # 의존성 설치
 pnpm install
 
+# 전체 프로젝트 (Turborepo)
+pnpm dev                 # 모든 패키지 dev 실행
+pnpm build               # 모든 패키지 빌드
+pnpm test                # 모든 패키지 테스트
+pnpm lint                # 모든 패키지 린트
+
 # 특정 패키지 명령어 실행
 pnpm --filter <package-name> <script>
-
-# 예시
-pnpm --filter forgod dev
-pnpm --filter @forgod/core build
-pnpm --filter @forgod/server start:api
 ```
 
 ## forgod 게임 명령어
 
 ```bash
 # 개발
-pnpm dev                 # forgod 개발 서버 (Vite HMR)
+pnpm forgod:dev          # forgod 개발 서버 (Vite HMR)
+pnpm forgod:server:dev   # forgod API 서버 개발 모드 (watch)
 
 # 빌드
-pnpm build:all           # 전체 빌드 (core → server → forgod 순서)
-pnpm build:core          # forgod-core만 빌드
-pnpm build:server        # forgod-server만 빌드
+pnpm forgod:build        # 전체 빌드 (core → forgod 순서)
 
 # 테스트
-pnpm test:core           # forgod-core 테스트 (Vitest)
-
-# 린트
-pnpm lint                # forgod 린트
+pnpm forgod:test         # forgod-core 테스트 (Vitest)
 
 # 서버
-pnpm api:start           # HTTP API 서버 시작
-pnpm api:dev             # API 개발 모드 (빌드 후 시작)
-pnpm mcp:start           # MCP 서버 시작
-pnpm mcp:inspect         # MCP 인스펙터로 테스트
+pnpm forgod:server       # forgod API 서버 시작
+
+# 개별 패키지
+pnpm --filter forgod dev
+pnpm --filter @forgod/core build
+pnpm --filter @forgod/core test
+pnpm --filter @forgod/server start
 ```
 
 ## 새 게임 추가 시
 
 1. `packages/<game>/` - 웹 UI 패키지 생성
 2. `packages/<game>-core/` - 게임 로직 패키지 생성
-3. `packages/<game>-server/` - 서버 패키지 생성 (필요시)
-4. 루트 `package.json`에 편의 스크립트 추가
-5. 게임별 `CLAUDE.md` 작성 (게임 규칙, 타입 구조 등)
+3. 루트 `package.json`에 편의 스크립트 추가 (`<game>:dev`, `<game>:build`, `<game>:test`)
+4. 게임별 `CLAUDE.md` 작성 (게임 규칙, 타입 구조 등)
 
 ## 기술 스택
 

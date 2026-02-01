@@ -2,18 +2,16 @@
   "name": "boardgame",
   "private": true,
   "scripts": {
-    "dev": "pnpm --filter forgod dev",
-    "build": "pnpm --filter forgod build",
-    "preview": "pnpm --filter forgod preview",
-    "lint": "pnpm --filter forgod lint",
-    "build:core": "pnpm --filter @forgod/core build",
-    "build:server": "pnpm --filter @forgod/server build",
-    "build:all": "pnpm --filter @forgod/core build && pnpm --filter @forgod/server build && pnpm --filter forgod build",
-    "test:core": "pnpm --filter @forgod/core test",
-    "mcp:start": "pnpm --filter @forgod/server start:mcp",
-    "mcp:inspect": "npx @modelcontextprotocol/inspector node packages/forgod-server/dist/index.js",
-    "api:start": "pnpm --filter @forgod/server start:api",
-    "api:dev": "pnpm build:core && pnpm build:server && pnpm --filter @forgod/server start:api"
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "forgod:dev": "pnpm --filter forgod dev",
+    "forgod:build": "pnpm --filter @forgod/core build && pnpm --filter forgod build",
+    "forgod:test": "pnpm --filter @forgod/core test && pnpm --filter @forgod/server test",
+    "forgod:server": "pnpm --filter @forgod/server start",
+    "forgod:server:dev": "pnpm --filter @forgod/server dev",
+    "forgod:server:test": "pnpm --filter @forgod/server test",
+    "forgod:server:build": "pnpm --filter @forgod/server build"
   },
   "devDependencies": {
     "turbo": "^2.3.0"
