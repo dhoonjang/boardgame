@@ -1,5 +1,5 @@
 #!/usr/bin/env node
 
-import { runServer } from './server.js'
+import { runServer } from './server'
 
 runServer().catch(console.error)

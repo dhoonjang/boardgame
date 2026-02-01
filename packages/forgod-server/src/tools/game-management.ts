@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { sessionManager } from '../session.js'
+import { sessionManager } from '../session'
 
 export const createGameSchema = z.object({
   players: z.array(

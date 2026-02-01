@@ -39,7 +39,9 @@ export default function NewGamePage() {
       heroClass: heroClass as HeroClass,
     }))
 
-    await createGame(players)
+    // 첫 번째 플레이어를 현재 사용자로 설정
+    const myPlayerId = 'player-1'
+    await createGame(players, myPlayerId)
     const { gameId } = useGameStore.getState()
     if (gameId) {
       navigate(`/game/${gameId}`)

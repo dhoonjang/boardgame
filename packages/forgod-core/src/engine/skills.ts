@@ -1,7 +1,7 @@
-import type { GameState, Player, HexCoord, GameEvent } from '../types.js'
-import { coordToKey, deserializeBoard } from '../types.js'
-import { getDistance, getTile, getNeighbors, coordEquals, getDirection, moveInDirection } from '../hex.js'
-import { ALL_SKILLS } from '../constants.js'
+import type { GameState, Player, HexCoord, GameEvent } from '../types'
+import { coordToKey, deserializeBoard } from '../types'
+import { getDistance, getTile, getNeighbors, coordEquals, getDirection, moveInDirection } from '../hex'
+import { ALL_SKILLS } from '../constants'
 
 export interface SkillResult {
   success: boolean

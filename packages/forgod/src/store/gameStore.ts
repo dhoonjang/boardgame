@@ -32,6 +32,7 @@ interface HexTileState {
 interface GameStore {
   // 상태
   gameId: string | null
+  playerId: string | null  // 현재 사용자의 플레이어 ID
   isLoading: boolean
   error: string | null
 
@@ -45,8 +46,8 @@ interface GameStore {
   validActions: ValidActionsResponse['validActions']
 
   // 액션
-  createGame: (players: Array<{ id: string; name: string; heroClass: HeroClass }>) => Promise<void>
-  loadGame: (gameId: string) => Promise<void>
+  createGame: (players: Array<{ id: string; name: string; heroClass: HeroClass }>, myPlayerId: string) => Promise<void>
+  loadGame: (gameId: string, playerId: string) => Promise<void>
   refreshGameState: () => Promise<void>
   executeAction: (action: GameAction) => Promise<void>
   resetGame: () => void
@@ -55,6 +56,7 @@ interface GameStore {
 export const useGameStore = create<GameStore>((set, get) => ({
   // 초기 상태
   gameId: null,
+  playerId: null,
   isLoading: false,
   error: null,
   roundNumber: 0,
@@ -66,7 +68,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   validActions: [],
 
   // 게임 생성
-  createGame: async (players) => {
+  createGame: async (players, myPlayerId) => {
     set({ isLoading: true, error: null })
 
     try {
@@ -76,10 +78,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
         throw new Error(result.error || '게임 생성 실패')
       }
 
-      set({ gameId: result.gameId })
+      set({ gameId: result.gameId, playerId: myPlayerId })
 
       // 게임 상태 로드
-      await get().loadGame(result.gameId)
+      await get().loadGame(result.gameId, myPlayerId)
     } catch (error) {
       const message = error instanceof Error ? error.message : '알 수 없는 오류'
       set({ error: message, isLoading: false })
@@ -87,13 +89,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   // 게임 로드
-  loadGame: async (gameId) => {
+  loadGame: async (gameId, playerId) => {
     set({ isLoading: true, error: null })
 
     try {
       const [stateResult, actionsResult] = await Promise.all([
-        api.getGameState(gameId),
-        api.getValidActions(gameId),
+        api.getGameState(gameId, playerId),
+        api.getValidActions(gameId, playerId),
       ])
 
       if (!stateResult.success || !stateResult.gameState) {
@@ -104,9 +106,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       set({
         gameId,
+        playerId,
         roundNumber: gameState.roundNumber,
-        currentPhase: gameState.currentPhase,
-        currentPlayerId: gameState.currentPlayer.id,
+        currentPhase: gameState.roundPhase,
+        currentPlayerId: gameState.currentTurnPlayer.id,
         players: gameState.players,
         monsters: gameState.monsters,
         board: gameState.board,
@@ -121,21 +124,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   // 게임 상태 새로고침
   refreshGameState: async () => {
-    const { gameId } = get()
-    if (!gameId) return
+    const { gameId, playerId } = get()
+    if (!gameId || !playerId) return
 
-    await get().loadGame(gameId)
+    await get().loadGame(gameId, playerId)
   },
 
   // 액션 실행
   executeAction: async (action) => {
-    const { gameId } = get()
-    if (!gameId) return
+    const { gameId, playerId } = get()
+    if (!gameId || !playerId) return
 
     set({ isLoading: true, error: null })
 
     try {
-      const result = await api.executeAction(gameId, action)
+      const result = await api.executeAction(gameId, playerId, action)
 
       if (!result.success) {
         throw new Error(result.error || '액션 실행 실패')
@@ -153,6 +156,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   resetGame: () => {
     set({
       gameId: null,
+      playerId: null,
       isLoading: false,
       error: null,
       roundNumber: 0,

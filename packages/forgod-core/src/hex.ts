@@ -1,5 +1,5 @@
-import type { HexCoord, HexDirection, HexBoard, HexTile, TileType } from './types.js'
-import { coordToKey } from './types.js'
+import type { HexCoord, HexDirection, HexBoard, HexTile, TileType } from './types'
+import { coordToKey } from './types'
 
 // 6개의 인접 방향 (시계방향, 오른쪽부터)
 // 방향 0: 오른쪽, 1: 오른쪽 아래, 2: 왼쪽 아래, 3: 왼쪽, 4: 왼쪽 위, 5: 오른쪽 위

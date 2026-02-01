@@ -77,6 +77,8 @@ export interface Player {
   monsterEssence: number
   devilScore: number                  // 마왕 점수
   faithScore: number                  // 신앙 점수
+  hasDemonSword: boolean              // 마검 보유 여부
+  knowsDemonSwordPosition: boolean    // 마검 위치 인지 여부 (타락 상태로 마왕성 진입 시 획득)
   isDead: boolean
   deathTurnsRemaining: number
   skillCooldowns: Record<string, number>
@@ -138,6 +140,7 @@ export interface GameState {
   monsters: Monster[]
   monsterDice: number[]           // 6개의 몬스터 주사위
   revelationDeck: Revelation[]
+  demonSwordPosition: HexCoord | null  // 마검 위치 (null이면 누군가 획득함)
 }
 
 // 직렬화된 보드 (JSON 저장용)
@@ -160,13 +163,15 @@ export function deserializeBoard(tiles: SerializedHexBoard): HexBoard {
 export type GameAction =
   | { type: 'ROLL_MOVE_DICE' }
   | { type: 'MOVE'; position: HexCoord }
+  | { type: 'END_MOVE_PHASE' }  // 이동 페이즈 종료 → action 페이즈로 전환
+  | { type: 'END_TURN' }        // action 페이즈에서 턴 종료
   | { type: 'BASIC_ATTACK'; targetId: string }
   | { type: 'USE_SKILL'; skillId: string; targetId?: string; position?: HexCoord }
   | { type: 'ROLL_STAT_DICE'; stat: keyof Stats }
-  | { type: 'END_TURN' }
   | { type: 'COMPLETE_REVELATION'; revelationId: string }
   | { type: 'APPLY_CORRUPT_DICE'; stat: keyof Stats }  // 타락 주사위 능력치에 적용
   | { type: 'CHOOSE_HOLY' }  // 부활 시 신성 선택
+  | { type: 'DRAW_DEMON_SWORD' }  // 마검 뽑기
 
 // 액션 결과
 export interface ActionResult {
@@ -191,4 +196,20 @@ export type GameEvent =
 export interface ValidAction {
   action: GameAction
   description: string
+}
+
+// 주사위 굴림 인터페이스 (테스트에서 주입 가능)
+export interface DiceRoller {
+  roll1d6(): number
+  roll2d6(): [number, number]
+}
+
+// 기본 주사위 굴림 구현
+export const defaultDiceRoller: DiceRoller = {
+  roll1d6(): number {
+    return Math.floor(Math.random() * 6) + 1
+  },
+  roll2d6(): [number, number] {
+    return [this.roll1d6(), this.roll1d6()]
+  },
 }

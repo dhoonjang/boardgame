@@ -1,5 +1,5 @@
 import { GameEngine, GameState, CreateGameOptions } from '@forgod/core'
-import { saveGame, loadGame, listActiveGames, deleteGame as dbDeleteGame } from './database.js'
+import { saveGame, loadGame, listActiveGames, deleteGame as dbDeleteGame } from './database'
 
 /**
  * 게임 세션 관리자
@@ -80,17 +80,21 @@ export class SessionManager {
 
   /**
    * 세션에 액션을 실행합니다.
+   * @param sessionId 세션 ID
+   * @param action 실행할 액션
+   * @param playerId 액션을 수행하는 플레이어 ID (없으면 현재 턴 플레이어)
    */
   async executeAction(
     sessionId: string,
-    action: Parameters<GameEngine['executeAction']>[1]
+    action: Parameters<GameEngine['executeAction']>[1],
+    playerId?: string
   ): Promise<ReturnType<GameEngine['executeAction']> | { success: false; error: string }> {
     const session = await this.getSession(sessionId)
     if (!session) {
       return { success: false, error: '세션을 찾을 수 없습니다.' }
     }
 
-    const result = this.engine.executeAction(session.state, action)
+    const result = this.engine.executeAction(session.state, action, playerId)
     if (result.success) {
       session.state = result.newState
       session.lastActionAt = new Date()
@@ -106,13 +110,15 @@ export class SessionManager {
 
   /**
    * 세션의 유효한 액션을 조회합니다.
+   * @param sessionId 세션 ID
+   * @param playerId 액션을 조회할 플레이어 ID (없으면 현재 턴 플레이어)
    */
-  async getValidActions(sessionId: string) {
+  async getValidActions(sessionId: string, playerId?: string) {
     const session = await this.getSession(sessionId)
     if (!session) {
       return []
     }
-    return this.engine.getValidActions(session.state)
+    return this.engine.getValidActions(session.state, playerId)
   }
 
   /**

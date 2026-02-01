@@ -1,6 +1,6 @@
-import { DEATH_RESPAWN_TURNS, MONSTERS } from '../constants.js';
-import { getDistance } from '../hex.js';
-import type { GameEvent, GameState, HexCoord, Monster, Player } from '../types.js';
+import { DEATH_RESPAWN_TURNS, MONSTERS } from '../constants';
+import { getDistance } from '../hex';
+import type { GameEvent, GameState, HexCoord, Monster, Player } from '../types';
 
 /**
  * 몬스터 주사위 굴리기 (6개)

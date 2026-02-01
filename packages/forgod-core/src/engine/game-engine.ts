@@ -10,13 +10,14 @@ import type {
   Stats,
   GameEvent,
   TurnEntry,
-} from '../types.js'
-import { deserializeBoard } from '../types.js'
-import { GAME_BOARD, STARTING_POSITIONS, MONSTERS, TERRAIN_MOVEMENT_COST, DEATH_RESPAWN_TURNS, SKILLS_BY_CLASS } from '../constants.js'
-import { getNeighbors, getDistance, getTile, coordEquals } from '../hex.js'
-import { useSkill, canUseSkill } from './skills.js'
-import { completeRevelation } from './revelations.js'
-import { checkVictoryCondition } from './victory.js'
+  DiceRoller,
+} from '../types'
+import { deserializeBoard, defaultDiceRoller } from '../types'
+import { GAME_BOARD, STARTING_POSITIONS, MONSTERS, TERRAIN_MOVEMENT_COST, DEATH_RESPAWN_TURNS, SKILLS_BY_CLASS, getMaxHealthByLevel } from '../constants'
+import { getNeighbors, getDistance, getTile, coordEquals } from '../hex'
+import { useSkill, canUseSkill } from './skills'
+import { completeRevelation } from './revelations'
+import { checkVictoryCondition } from './victory'
 
 // Simple UUID generator for cross-platform compatibility
 function generateId(): string {
@@ -29,6 +30,7 @@ function generateId(): string {
 
 export interface GameEngineConfig {
   maxPlayers: number
+  diceRoller?: DiceRoller
 }
 
 export interface CreateGameOptions {
@@ -37,6 +39,7 @@ export interface CreateGameOptions {
     name: string
     heroClass: HeroClass
   }>
+  demonSwordPosition?: HexCoord  // 테스트용: 마검 위치 지정
 }
 
 /**
@@ -47,12 +50,14 @@ export interface CreateGameOptions {
  */
 export class GameEngine {
   private config: GameEngineConfig
+  private diceRoller: DiceRoller
 
   constructor(config: Partial<GameEngineConfig> = {}) {
     this.config = {
       maxPlayers: 4,
       ...config,
     }
+    this.diceRoller = config.diceRoller ?? defaultDiceRoller
   }
 
   /**
@@ -73,6 +78,9 @@ export class GameEngine {
       'monster',
     ]
 
+    // 마검 위치 초기화 (마왕성 근처 숨겨진 위치)
+    const demonSwordPosition = options.demonSwordPosition ?? this.initializeDemonSwordPosition()
+
     return {
       id: generateId(),
       players,
@@ -83,18 +91,60 @@ export class GameEngine {
       monsters,
       monsterDice: [1, 1, 1, 1, 1, 1],
       revelationDeck: [],
+      demonSwordPosition,
     }
   }
 
   /**
    * 액션을 실행하고 새로운 게임 상태를 반환합니다.
+   * @param state 현재 게임 상태
+   * @param action 실행할 액션
+   * @param playerId 액션을 수행하는 플레이어 ID (없으면 현재 턴 플레이어)
    */
-  executeAction(state: GameState, action: GameAction): ActionResult {
+  executeAction(state: GameState, action: GameAction, playerId?: string): ActionResult {
+    // playerId가 없으면 현재 턴 플레이어 사용 (하위 호환성)
+    const actingPlayerId = playerId ?? this.getCurrentPlayer(state)?.id
+
+    // 턴 기반 액션은 현재 턴 플레이어만 수행 가능
+    const turnBasedActions = ['ROLL_MOVE_DICE', 'MOVE', 'END_MOVE_PHASE', 'BASIC_ATTACK', 'USE_SKILL', 'ROLL_STAT_DICE', 'END_TURN']
+    if (turnBasedActions.includes(action.type)) {
+      const currentPlayer = this.getCurrentPlayer(state)
+      if (!currentPlayer) {
+        return {
+          success: false,
+          newState: state,
+          message: '몬스터 턴에는 행동할 수 없습니다.',
+          events: [],
+        }
+      }
+      if (actingPlayerId !== currentPlayer.id) {
+        return {
+          success: false,
+          newState: state,
+          message: '자신의 턴에만 이 액션을 수행할 수 있습니다.',
+          events: [],
+        }
+      }
+    }
+
+    // 비-턴 액션은 해당 플레이어가 수행
+    const nonTurnActions = ['COMPLETE_REVELATION', 'APPLY_CORRUPT_DICE', 'CHOOSE_HOLY']
+    if (nonTurnActions.includes(action.type) && !actingPlayerId) {
+      return {
+        success: false,
+        newState: state,
+        message: '플레이어 ID가 필요합니다.',
+        events: [],
+      }
+    }
+
     switch (action.type) {
       case 'ROLL_MOVE_DICE':
         return this.handleRollMoveDice(state)
       case 'MOVE':
         return this.handleMove(state, action.position)
+      case 'END_MOVE_PHASE':
+        return this.handleEndMovePhase(state)
       case 'BASIC_ATTACK':
         return this.handleBasicAttack(state, action.targetId)
       case 'USE_SKILL':
@@ -104,11 +154,13 @@ export class GameEngine {
       case 'END_TURN':
         return this.handleEndTurn(state)
       case 'COMPLETE_REVELATION':
-        return this.handleCompleteRevelation(state, action.revelationId)
+        return this.handleCompleteRevelation(state, action.revelationId, actingPlayerId!)
       case 'APPLY_CORRUPT_DICE':
-        return this.handleApplyCorruptDice(state, action.stat)
+        return this.handleApplyCorruptDice(state, action.stat, actingPlayerId!)
       case 'CHOOSE_HOLY':
-        return this.handleChooseHoly(state)
+        return this.handleChooseHoly(state, actingPlayerId!)
+      case 'DRAW_DEMON_SWORD':
+        return this.handleDrawDemonSword(state, actingPlayerId!)
       default:
         return {
           success: false,
@@ -137,32 +189,47 @@ export class GameEngine {
 
   /**
    * 현재 상태에서 가능한 모든 액션을 반환합니다.
+   * @param state 현재 게임 상태
+   * @param playerId 액션을 조회할 플레이어 ID (없으면 현재 턴 플레이어)
    */
-  getValidActions(state: GameState): ValidAction[] {
+  getValidActions(state: GameState, playerId?: string): ValidAction[] {
     const validActions: ValidAction[] = []
     const currentPlayer = this.getCurrentPlayer(state)
 
-    // 몬스터 턴이면 액션 없음
-    if (!currentPlayer) {
+    // playerId가 지정된 경우 해당 플레이어 조회
+    const targetPlayer = playerId
+      ? state.players.find(p => p.id === playerId)
+      : currentPlayer
+
+    if (!targetPlayer) {
       return []
     }
 
-    if (currentPlayer.isDead) {
-      return []
+    // 현재 턴 플레이어인지 확인
+    const isCurrentTurn = currentPlayer?.id === targetPlayer.id
+
+    // 현재 턴 플레이어가 아닌 경우: 비-턴 액션만 반환
+    if (!isCurrentTurn) {
+      return this.getNonTurnActions(state, targetPlayer)
+    }
+
+    // 현재 턴 플레이어인 경우: 턴 액션 + 비-턴 액션 반환
+    if (targetPlayer.isDead) {
+      return this.getNonTurnActions(state, targetPlayer)
     }
 
     // 이동 단계
-    if (currentPlayer.turnPhase === 'move') {
+    if (targetPlayer.turnPhase === 'move') {
       // 아직 주사위를 굴리지 않았으면
-      if (currentPlayer.remainingMovement === null) {
+      if (targetPlayer.remainingMovement === null) {
         validActions.push({
           action: { type: 'ROLL_MOVE_DICE' },
           description: '이동 주사위를 굴립니다.',
         })
-      } else if (currentPlayer.remainingMovement > 0) {
+      } else if (targetPlayer.remainingMovement > 0) {
         // 이동 가능한 인접 타일 추가
         const board = deserializeBoard(state.board)
-        const neighbors = getNeighbors(currentPlayer.position)
+        const neighbors = getNeighbors(targetPlayer.position)
 
         for (const neighbor of neighbors) {
           const tile = getTile(board, neighbor)
@@ -171,13 +238,13 @@ export class GameEngine {
           const moveCost = TERRAIN_MOVEMENT_COST[tile.type]
           if (moveCost === 'blocked') continue
 
-          // 타락 용사의 신전 진입 불가
-          if (tile.type === 'temple' && currentPlayer.state === 'corrupt') {
+          // 타락 용사의 신전 진입 불가 (마검 보유 시 가능)
+          if (tile.type === 'temple' && targetPlayer.state === 'corrupt' && !targetPlayer.hasDemonSword) {
             continue
           }
 
-          const actualCost = moveCost === 'all' ? currentPlayer.remainingMovement : moveCost
-          if (currentPlayer.remainingMovement >= actualCost) {
+          const actualCost = moveCost === 'all' ? targetPlayer.remainingMovement : moveCost
+          if (targetPlayer.remainingMovement >= actualCost) {
             validActions.push({
               action: { type: 'MOVE', position: neighbor },
               description: `(${neighbor.q}, ${neighbor.r})로 이동 (이동력 -${actualCost})`,
@@ -187,26 +254,26 @@ export class GameEngine {
 
         // 이동 종료 (행동 단계로 전환)
         validActions.push({
-          action: { type: 'END_TURN' },
+          action: { type: 'END_MOVE_PHASE' },
           description: '이동을 종료하고 행동 단계로 넘어갑니다.',
         })
       } else {
         // 이동력이 0이면 행동 단계로
         validActions.push({
-          action: { type: 'END_TURN' },
+          action: { type: 'END_MOVE_PHASE' },
           description: '행동 단계로 넘어갑니다.',
         })
       }
     }
 
     // 행동 단계
-    if (currentPlayer.turnPhase === 'action') {
+    if (targetPlayer.turnPhase === 'action') {
       // 인접한 대상에 대한 기본 공격
-      const neighbors = getNeighbors(currentPlayer.position)
+      const neighbors = getNeighbors(targetPlayer.position)
 
       // 인접 플레이어 공격
       for (const player of state.players) {
-        if (player.id === currentPlayer.id || player.isDead) continue
+        if (player.id === targetPlayer.id || player.isDead) continue
         if (neighbors.some(n => coordEquals(n, player.position))) {
           validActions.push({
             action: { type: 'BASIC_ATTACK', targetId: player.id },
@@ -227,11 +294,11 @@ export class GameEngine {
       }
 
       // 사용 가능한 스킬 추가 (이번 턴에 사용한 비용 + 스킬 비용 <= 지능)
-      const playerSkills = SKILLS_BY_CLASS[currentPlayer.heroClass]
-      const intelligence = this.getStatTotal(currentPlayer.stats.intelligence)
-      const remainingSkillCost = intelligence - currentPlayer.usedSkillCost
+      const playerSkills = SKILLS_BY_CLASS[targetPlayer.heroClass]
+      const intelligence = this.getStatTotal(targetPlayer.stats.intelligence)
+      const remainingSkillCost = intelligence - targetPlayer.usedSkillCost
       for (const skill of playerSkills) {
-        const cooldown = currentPlayer.skillCooldowns[skill.id] ?? 0
+        const cooldown = targetPlayer.skillCooldowns[skill.id] ?? 0
         if (cooldown === 0 && skill.cost <= remainingSkillCost) {
           validActions.push({
             action: { type: 'USE_SKILL', skillId: skill.id },
@@ -241,12 +308,13 @@ export class GameEngine {
       }
 
       // 능력치 주사위 굴리기 (몬스터 정수가 충분할 때)
+      // 레벨 = 가장 높은 능력치의 주사위 합
       const currentLevel = Math.max(
-        Math.max(...currentPlayer.stats.strength),
-        Math.max(...currentPlayer.stats.dexterity),
-        Math.max(...currentPlayer.stats.intelligence)
+        targetPlayer.stats.strength[0] + targetPlayer.stats.strength[1],
+        targetPlayer.stats.dexterity[0] + targetPlayer.stats.dexterity[1],
+        targetPlayer.stats.intelligence[0] + targetPlayer.stats.intelligence[1]
       )
-      if (currentPlayer.monsterEssence >= currentLevel) {
+      if (targetPlayer.monsterEssence >= currentLevel) {
         validActions.push({
           action: { type: 'ROLL_STAT_DICE', stat: 'strength' },
           description: `힘 주사위 굴리기 (정수 ${currentLevel} 소모)`,
@@ -264,6 +332,53 @@ export class GameEngine {
       validActions.push({
         action: { type: 'END_TURN' },
         description: '턴을 종료합니다.',
+      })
+    }
+
+    // 비-턴 액션 추가
+    validActions.push(...this.getNonTurnActions(state, targetPlayer))
+
+    return validActions
+  }
+
+  /**
+   * 턴과 무관한 액션 목록을 반환합니다 (계시 완료, 타락 주사위 적용 등)
+   */
+  private getNonTurnActions(state: GameState, player: Player): ValidAction[] {
+    const validActions: ValidAction[] = []
+
+    // 타락 주사위 적용 (타락 주사위가 있고 아직 적용 안 한 경우)
+    if (player.corruptDice !== null && player.corruptDiceTarget === null) {
+      validActions.push({
+        action: { type: 'APPLY_CORRUPT_DICE', stat: 'strength' },
+        description: '타락 주사위를 힘에 적용합니다.',
+      })
+      validActions.push({
+        action: { type: 'APPLY_CORRUPT_DICE', stat: 'dexterity' },
+        description: '타락 주사위를 민첩에 적용합니다.',
+      })
+      validActions.push({
+        action: { type: 'APPLY_CORRUPT_DICE', stat: 'intelligence' },
+        description: '타락 주사위를 지능에 적용합니다.',
+      })
+    }
+
+    // 부활 시 신성 선택 (타락 상태에서 부활 직후)
+    // 이 로직은 더 세밀한 조건이 필요할 수 있음
+    // 현재는 타락 상태면 언제든 신성 선택 가능하도록 함
+    if (player.state === 'corrupt') {
+      validActions.push({
+        action: { type: 'CHOOSE_HOLY' },
+        description: '신성 상태로 전환합니다.',
+      })
+    }
+
+    // 계시 완료는 특정 조건을 만족할 때만 가능 (revelations.ts에서 검증)
+    // 여기서는 보유 중인 계시가 있으면 액션 추가
+    for (const revelation of player.revelations) {
+      validActions.push({
+        action: { type: 'COMPLETE_REVELATION', revelationId: revelation.id },
+        description: `계시 "${revelation.name}" 완료 시도`,
       })
     }
 
@@ -300,14 +415,14 @@ export class GameEngine {
    * 주사위 굴리기 (1d6)
    */
   private rollDice(): number {
-    return Math.floor(Math.random() * 6) + 1
+    return this.diceRoller.roll1d6()
   }
 
   /**
    * 2d6 굴리기
    */
   private roll2d6(): [number, number] {
-    return [this.rollDice(), this.rollDice()]
+    return this.diceRoller.roll2d6()
   }
 
   private initializePlayers(
@@ -330,6 +445,10 @@ export class GameEngine {
       // 다음 같은 직업 플레이어를 위해 인덱스 증가
       usedPositionIndex[config.heroClass]++
 
+      // 초기 레벨 계산: [1,1] + [1,1] + [1,1] 중 최대 = 2
+      const initialLevel = 2
+      const initialMaxHealth = getMaxHealthByLevel(config.heroClass, initialLevel)
+
       return {
         id: config.id,
         name: config.name,
@@ -342,14 +461,16 @@ export class GameEngine {
         },
         corruptDice: null,
         corruptDiceTarget: null,
-        health: 20,
-        maxHealth: 20,
+        health: initialMaxHealth,
+        maxHealth: initialMaxHealth,
         position,
         revelations: [],
         completedRevelations: [],
         monsterEssence: 0,
         devilScore: 0,
         faithScore: 0,
+        hasDemonSword: false,
+        knowsDemonSwordPosition: false,
         isDead: false,
         deathTurnsRemaining: 0,
         skillCooldowns: {},
@@ -373,6 +494,22 @@ export class GameEngine {
       diceIndices: def.diceIndices,
       isDead: false,
     }))
+  }
+
+  /**
+   * 마검 초기 위치 설정
+   * 이동 가능한 타일 중 랜덤한 위치에 마검 배치
+   */
+  private initializeDemonSwordPosition(): HexCoord {
+    // 이동 가능한 타일 필터링 (blocked가 아닌 타일)
+    const movableTiles = GAME_BOARD.filter(tile => {
+      const moveCost = TERRAIN_MOVEMENT_COST[tile.type]
+      return moveCost !== 'blocked'
+    })
+
+    // 랜덤하게 하나 선택
+    const randomIndex = Math.floor(Math.random() * movableTiles.length)
+    return movableTiles[randomIndex].coord
   }
 
   private handleRollMoveDice(state: GameState): ActionResult {
@@ -494,12 +631,12 @@ export class GameEngine {
       }
     }
 
-    // 타락 용사의 신전 진입 불가
-    if (targetTile.type === 'temple' && currentPlayer.state === 'corrupt') {
+    // 타락 용사의 신전 진입 불가 (마검 보유 시 가능)
+    if (targetTile.type === 'temple' && currentPlayer.state === 'corrupt' && !currentPlayer.hasDemonSword) {
       return {
         success: false,
         newState: state,
-        message: '타락한 용사는 신전에 진입할 수 없습니다.',
+        message: '타락한 용사는 신전에 진입할 수 없습니다. (마검 보유 시 가능)',
         events: [],
       }
     }
@@ -522,9 +659,18 @@ export class GameEngine {
     // 언덕 진입 시 자동으로 행동 단계로 전환
     const newTurnPhase = moveCost === 'all' ? 'action' as const : currentPlayer.turnPhase
 
-    const newPlayers = state.players.map(p =>
+    // 마왕성(castle) 진입 시 타락 상태면 마검 위치를 알게 됨
+    const learnsDemonSwordPosition = targetTile.type === 'castle' && currentPlayer.state === 'corrupt'
+
+    let newPlayers = state.players.map(p =>
       p.id === currentPlayer.id
-        ? { ...p, position, remainingMovement: newRemainingMovement, turnPhase: newTurnPhase }
+        ? {
+            ...p,
+            position,
+            remainingMovement: newRemainingMovement,
+            turnPhase: newTurnPhase,
+            knowsDemonSwordPosition: learnsDemonSwordPosition ? true : p.knowsDemonSwordPosition,
+          }
         : p
     )
 
@@ -535,13 +681,18 @@ export class GameEngine {
       to: position,
     }]
 
+    let message = `(${position.q}, ${position.r})로 이동했습니다. (이동력 -${actualCost}, 남은: ${newRemainingMovement})`
+    if (learnsDemonSwordPosition && !currentPlayer.knowsDemonSwordPosition) {
+      message += ' 마왕성에서 마검의 위치를 알게 되었습니다!'
+    }
+
     return {
       success: true,
       newState: {
         ...state,
         players: newPlayers,
       },
-      message: `(${position.q}, ${position.r})로 이동했습니다. (이동력 -${actualCost}, 남은: ${newRemainingMovement})`,
+      message,
       events,
     }
   }
@@ -732,11 +883,11 @@ export class GameEngine {
       }
     }
 
-    // 현재 레벨 계산 (가장 높은 능력치 = 레벨)
+    // 현재 레벨 계산 (가장 높은 능력치의 주사위 합)
     const currentLevel = Math.max(
-      Math.max(...currentPlayer.stats.strength),
-      Math.max(...currentPlayer.stats.dexterity),
-      Math.max(...currentPlayer.stats.intelligence)
+      currentPlayer.stats.strength[0] + currentPlayer.stats.strength[1],
+      currentPlayer.stats.dexterity[0] + currentPlayer.stats.dexterity[1],
+      currentPlayer.stats.intelligence[0] + currentPlayer.stats.intelligence[1]
     )
 
     // 필요한 몬스터 정수: 레벨만큼
@@ -750,16 +901,22 @@ export class GameEngine {
       }
     }
 
-    // 능력치 주사위 값 (2개 중 낮은 값)
+    // 능력치 주사위 값
     const statDice = currentPlayer.stats[stat]
-    const lowerDice = Math.min(statDice[0], statDice[1])
-    const lowerDiceIndex = statDice[0] <= statDice[1] ? 0 : 1
 
     // 1d6 굴리기
     const roll = this.rollDice()
 
-    // 굴린 값이 낮은 주사위보다 높으면 업그레이드
-    const success = roll > lowerDice
+    // 굴린 값보다 낮은 주사위들 찾기
+    const lowerDiceIndices: number[] = []
+    if (statDice[0] < roll) lowerDiceIndices.push(0)
+    if (statDice[1] < roll) lowerDiceIndices.push(1)
+
+    // 굴린 값보다 낮은 주사위가 없으면 실패
+    const success = lowerDiceIndices.length > 0
+
+    // 이전 최대 체력 저장
+    const oldMaxHealth = currentPlayer.maxHealth
 
     let newPlayers = state.players.map(p =>
       p.id === currentPlayer.id
@@ -767,35 +924,99 @@ export class GameEngine {
         : p
     )
 
-    if (success) {
-      const newStatDice: [number, number] = [...statDice] as [number, number]
-      newStatDice[lowerDiceIndex] = roll
-
-      newPlayers = newPlayers.map(p =>
-        p.id === currentPlayer.id
-          ? {
-              ...p,
-              stats: {
-                ...p.stats,
-                [stat]: newStatDice,
-              },
-            }
-          : p
-      )
-    }
-
     const statNames: Record<keyof Stats, string> = {
       strength: '힘',
       dexterity: '민첩',
       intelligence: '지능',
     }
 
+    if (success) {
+      // 굴린 값보다 낮은 주사위들 중 가장 높은 값을 가진 주사위를 +1
+      const targetIndex = lowerDiceIndices.reduce((maxIdx, idx) =>
+        statDice[idx] > statDice[maxIdx] ? idx : maxIdx
+      , lowerDiceIndices[0])
+
+      const oldValue = statDice[targetIndex]
+      const newStatDice: [number, number] = [...statDice] as [number, number]
+      newStatDice[targetIndex] = oldValue + 1
+
+      // 새 레벨 계산 (업그레이드된 능력치 반영)
+      const updatedStats = {
+        ...currentPlayer.stats,
+        [stat]: newStatDice,
+      }
+      const newLevel = Math.max(
+        updatedStats.strength[0] + updatedStats.strength[1],
+        updatedStats.dexterity[0] + updatedStats.dexterity[1],
+        updatedStats.intelligence[0] + updatedStats.intelligence[1]
+      )
+
+      // 새 레벨에 따른 최대 체력 계산
+      const newMaxHealth = getMaxHealthByLevel(currentPlayer.heroClass, newLevel)
+      const healthDiff = newMaxHealth - oldMaxHealth
+
+      newPlayers = newPlayers.map(p =>
+        p.id === currentPlayer.id
+          ? {
+              ...p,
+              stats: updatedStats,
+              maxHealth: newMaxHealth,
+              // 최대 체력이 증가하면 현재 체력도 같은 양만큼 증가
+              health: p.health + healthDiff,
+            }
+          : p
+      )
+
+      return {
+        success: true,
+        newState: { ...state, players: newPlayers },
+        message: `${statNames[stat]} 주사위 굴림: ${roll}. 업그레이드 성공! [${statDice[0]}, ${statDice[1]}] → [${newStatDice[0]}, ${newStatDice[1]}]`,
+        events: [],
+      }
+    }
+
     return {
       success: true,
       newState: { ...state, players: newPlayers },
-      message: success
-        ? `${statNames[stat]} 주사위 굴림: ${roll}. 업그레이드 성공! (${lowerDice} → ${roll})`
-        : `${statNames[stat]} 주사위 굴림: ${roll}. 업그레이드 실패. (현재 최소: ${lowerDice})`,
+      message: `${statNames[stat]} 주사위 굴림: ${roll}. 업그레이드 실패. (현재: [${statDice[0]}, ${statDice[1]}], 둘 다 ${roll} 이상)`,
+      events: [],
+    }
+  }
+
+  /**
+   * 이동 페이즈 종료 처리 (move → action 페이즈 전환)
+   */
+  private handleEndMovePhase(state: GameState): ActionResult {
+    const currentPlayer = this.getCurrentPlayer(state)
+
+    if (!currentPlayer) {
+      return {
+        success: false,
+        newState: state,
+        message: '몬스터 턴에는 이동 페이즈를 종료할 수 없습니다.',
+        events: [],
+      }
+    }
+
+    if (currentPlayer.turnPhase !== 'move') {
+      return {
+        success: false,
+        newState: state,
+        message: '이동 단계가 아닙니다.',
+        events: [],
+      }
+    }
+
+    const newPlayers = state.players.map(p =>
+      p.id === currentPlayer.id
+        ? { ...p, turnPhase: 'action' as const }
+        : p
+    )
+
+    return {
+      success: true,
+      newState: { ...state, players: newPlayers },
+      message: '행동 단계로 넘어갑니다.',
       events: [],
     }
   }
@@ -813,18 +1034,12 @@ export class GameEngine {
       }
     }
 
-    // 이동 단계에서 END_TURN: 행동 단계로 전환
+    // action 페이즈에서만 턴 종료 가능
     if (currentPlayer.turnPhase === 'move') {
-      const newPlayers = state.players.map(p =>
-        p.id === currentPlayer.id
-          ? { ...p, turnPhase: 'action' as const }
-          : p
-      )
-
       return {
-        success: true,
-        newState: { ...state, players: newPlayers },
-        message: '행동 단계로 넘어갑니다.',
+        success: false,
+        newState: state,
+        message: '이동 단계에서는 턴을 종료할 수 없습니다. END_MOVE_PHASE를 사용하세요.',
         events: [],
       }
     }
@@ -1023,20 +1238,21 @@ export class GameEngine {
 
   private handleCompleteRevelation(
     state: GameState,
-    revelationId: string
+    revelationId: string,
+    playerId: string
   ): ActionResult {
-    const currentPlayer = this.getCurrentPlayer(state)
+    const player = state.players.find(p => p.id === playerId)
 
-    if (!currentPlayer) {
+    if (!player) {
       return {
         success: false,
         newState: state,
-        message: '몬스터 턴에는 계시를 완료할 수 없습니다.',
+        message: '플레이어를 찾을 수 없습니다.',
         events: [],
       }
     }
 
-    const result = completeRevelation(state, currentPlayer.id, revelationId)
+    const result = completeRevelation(state, playerId, revelationId)
 
     // 승리 조건 체크
     if (result.success) {
@@ -1058,21 +1274,22 @@ export class GameEngine {
    */
   private handleApplyCorruptDice(
     state: GameState,
-    stat: keyof Stats
+    stat: keyof Stats,
+    playerId: string
   ): ActionResult {
-    const currentPlayer = this.getCurrentPlayer(state)
+    const player = state.players.find(p => p.id === playerId)
 
-    if (!currentPlayer) {
+    if (!player) {
       return {
         success: false,
         newState: state,
-        message: '몬스터 턴에는 타락 주사위를 적용할 수 없습니다.',
+        message: '플레이어를 찾을 수 없습니다.',
         events: [],
       }
     }
 
     // 타락 주사위가 있어야 함
-    if (currentPlayer.corruptDice === null) {
+    if (player.corruptDice === null) {
       return {
         success: false,
         newState: state,
@@ -1082,7 +1299,7 @@ export class GameEngine {
     }
 
     // 이미 적용된 능력치가 있으면 에러
-    if (currentPlayer.corruptDiceTarget !== null) {
+    if (player.corruptDiceTarget !== null) {
       return {
         success: false,
         newState: state,
@@ -1092,7 +1309,7 @@ export class GameEngine {
     }
 
     const newPlayers = state.players.map(p =>
-      p.id === currentPlayer.id
+      p.id === playerId
         ? { ...p, corruptDiceTarget: stat }
         : p
     )
@@ -1106,7 +1323,7 @@ export class GameEngine {
     return {
       success: true,
       newState: { ...state, players: newPlayers },
-      message: `타락 주사위(${currentPlayer.corruptDice})를 ${statNames[stat]}에 적용했습니다.`,
+      message: `타락 주사위(${player.corruptDice})를 ${statNames[stat]}에 적용했습니다.`,
       events: [],
     }
   }
@@ -1114,20 +1331,20 @@ export class GameEngine {
   /**
    * 부활 시 신성 선택 (타락에서 신성으로 전환)
    */
-  private handleChooseHoly(state: GameState): ActionResult {
-    const currentPlayer = this.getCurrentPlayer(state)
+  private handleChooseHoly(state: GameState, playerId: string): ActionResult {
+    const player = state.players.find(p => p.id === playerId)
 
-    if (!currentPlayer) {
+    if (!player) {
       return {
         success: false,
         newState: state,
-        message: '몬스터 턴에는 신성 선택을 할 수 없습니다.',
+        message: '플레이어를 찾을 수 없습니다.',
         events: [],
       }
     }
 
     // 부활 직후여야 함 (타락 상태에서만 가능)
-    if (currentPlayer.state !== 'corrupt') {
+    if (player.state !== 'corrupt') {
       return {
         success: false,
         newState: state,
@@ -1137,7 +1354,7 @@ export class GameEngine {
     }
 
     const newPlayers = state.players.map(p =>
-      p.id === currentPlayer.id
+      p.id === playerId
         ? {
             ...p,
             state: 'holy' as const,
@@ -1151,6 +1368,85 @@ export class GameEngine {
       success: true,
       newState: { ...state, players: newPlayers },
       message: '신성 상태로 전환했습니다. 타락 주사위가 사라집니다.',
+      events: [],
+    }
+  }
+
+  /**
+   * 마검 뽑기
+   * - 타락 상태여야 함
+   * - 마검 위치를 알고 있어야 함 (마왕성 방문 경험)
+   * - 마검 위치에 있어야 함
+   * - 마검이 아직 뽑히지 않았어야 함
+   */
+  private handleDrawDemonSword(state: GameState, playerId: string): ActionResult {
+    const player = state.players.find(p => p.id === playerId)
+
+    if (!player) {
+      return {
+        success: false,
+        newState: state,
+        message: '플레이어를 찾을 수 없습니다.',
+        events: [],
+      }
+    }
+
+    // 타락 상태여야 함
+    if (player.state !== 'corrupt') {
+      return {
+        success: false,
+        newState: state,
+        message: '타락 상태에서만 마검을 뽑을 수 있습니다.',
+        events: [],
+      }
+    }
+
+    // 마검 위치를 알고 있어야 함 (마왕성 방문 필요)
+    if (!player.knowsDemonSwordPosition) {
+      return {
+        success: false,
+        newState: state,
+        message: '마검의 위치를 모릅니다. 먼저 마왕성을 방문해야 합니다.',
+        events: [],
+      }
+    }
+
+    // 마검이 이미 뽑혔는지 확인
+    if (state.demonSwordPosition === null) {
+      return {
+        success: false,
+        newState: state,
+        message: '마검은 이미 누군가에게 있습니다.',
+        events: [],
+      }
+    }
+
+    // 마검 위치에 있는지 확인
+    const swordPos = state.demonSwordPosition
+    if (player.position.q !== swordPos.q || player.position.r !== swordPos.r) {
+      return {
+        success: false,
+        newState: state,
+        message: '마검이 있는 위치가 아닙니다.',
+        events: [],
+      }
+    }
+
+    // 마검 획득
+    const newPlayers = state.players.map(p =>
+      p.id === playerId
+        ? { ...p, hasDemonSword: true }
+        : p
+    )
+
+    return {
+      success: true,
+      newState: {
+        ...state,
+        players: newPlayers,
+        demonSwordPosition: null,  // 마검 위치 제거
+      },
+      message: `${player.name}이(가) 마검을 뽑았습니다!`,
       events: [],
     }
   }

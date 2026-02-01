@@ -1,19 +1,19 @@
 // Types
-export * from './types.js'
+export * from './types'
 
 // Constants
-export * from './constants.js'
+export * from './constants'
 
 // Hex utilities
-export * from './hex.js'
+export * from './hex'
 
 // Engine
-export { GameEngine } from './engine/game-engine.js'
-export type { GameEngineConfig, CreateGameOptions } from './engine/game-engine.js'
+export { GameEngine } from './engine/game-engine'
+export type { GameEngineConfig, CreateGameOptions } from './engine/game-engine'
 
 // Skills
-export { useSkill, canUseSkill } from './engine/skills.js'
-export type { SkillResult } from './engine/skills.js'
+export { useSkill, canUseSkill } from './engine/skills'
+export type { SkillResult } from './engine/skills'
 
 // Combat
 export {
@@ -23,15 +23,15 @@ export {
   healAtVillage,
   applyFireTileDamage,
   applyTileEntryDamage,
-} from './engine/combat.js'
-export type { DamageCalculation } from './engine/combat.js'
+} from './engine/combat'
+export type { DamageCalculation } from './engine/combat'
 
 // Monsters
 export {
   rollMonsterDice,
   processMonsterPhase,
   checkBalrogRespawn,
-} from './engine/monsters.js'
+} from './engine/monsters'
 
 // Revelations
 export {
@@ -39,13 +39,13 @@ export {
   checkRevelationCondition,
   completeRevelation,
   createRevelationDeck,
-} from './engine/revelations.js'
-export type { RevelationResult } from './engine/revelations.js'
+} from './engine/revelations'
+export type { RevelationResult } from './engine/revelations'
 
 // Victory
 export {
   checkVictoryCondition,
   handleGameOver,
   getPlayerScores,
-} from './engine/victory.js'
-export type { VictoryType, VictoryCheckResult } from './engine/victory.js'
+} from './engine/victory'
+export type { VictoryType, VictoryCheckResult } from './engine/victory'

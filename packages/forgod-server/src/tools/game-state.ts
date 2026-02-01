@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { sessionManager } from '../session.js'
+import { sessionManager } from '../session'
 import { GAME_RULES } from '@forgod/core'
 
 export const getGameStateSchema = z.object({

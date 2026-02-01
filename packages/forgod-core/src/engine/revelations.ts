@@ -1,7 +1,7 @@
-import type { GameState, Player, Revelation, HexCoord, GameEvent } from '../types.js'
-import { deserializeBoard, coordToKey } from '../types.js'
-import { getTile, coordEquals } from '../hex.js'
-import { REVELATIONS } from '../constants.js'
+import type { GameState, Player, Revelation, HexCoord, GameEvent } from '../types'
+import { deserializeBoard, coordToKey } from '../types'
+import { getTile, coordEquals } from '../hex'
+import { REVELATIONS } from '../constants'
 
 export interface RevelationResult {
   success: boolean

@@ -4,27 +4,27 @@ import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { z } from 'zod'
-import { sessionManager } from './session.js'
+import { sessionManager } from './session'
 import {
   createGame,
   createGameSchema,
   listGames,
   deleteGame,
   deleteGameSchema,
-} from './tools/game-management.js'
+} from './tools/game-management'
 import {
   getGameState,
   getGameStateSchema,
   getGameRules,
-} from './tools/game-state.js'
+} from './tools/game-state'
 import {
   getValidActions,
   getValidActionsSchema,
-} from './tools/valid-actions.js'
+} from './tools/valid-actions'
 import {
   executeAction,
   executeActionSchema,
-} from './tools/execute-action.js'
+} from './tools/execute-action'
 
 const app = new Hono()
 

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { sessionManager } from '../session.js'
+import { sessionManager } from '../session'
 import type { GameAction } from '@forgod/core'
 
 export const executeActionSchema = z.object({
@@ -17,6 +17,12 @@ export const executeActionSchema = z.object({
       }).describe('이동할 6각형 좌표'),
     }),
     z.object({
+      type: z.literal('END_MOVE_PHASE'),
+    }),
+    z.object({
+      type: z.literal('END_TURN'),
+    }),
+    z.object({
       type: z.literal('BASIC_ATTACK'),
       targetId: z.string().describe('공격 대상 ID (플레이어 또는 몬스터)'),
     }),
@@ -32,9 +38,6 @@ export const executeActionSchema = z.object({
     z.object({
       type: z.literal('ROLL_STAT_DICE'),
       stat: z.enum(['strength', 'dexterity', 'intelligence']).describe('굴릴 능력치'),
-    }),
-    z.object({
-      type: z.literal('END_TURN'),
     }),
     z.object({
       type: z.literal('COMPLETE_REVELATION'),
@@ -71,19 +74,12 @@ export async function executeAction(input: ExecuteActionInput) {
     }
   }
 
-  // 현재 턴인지 확인
-  const currentPlayer = session.state.players[session.state.currentPlayerIndex]
-  if (currentPlayer.id !== input.playerId) {
-    return {
-      success: false,
-      error: '현재 당신의 턴이 아닙니다.',
-    }
-  }
+  // 턴 체크는 엔진에서 수행 (턴 기반 액션은 현재 턴 플레이어만, 비-턴 액션은 언제든 가능)
 
   // Zod 스키마에서 검증된 액션을 GameAction 타입으로 변환
   const gameAction = input.action as GameAction
 
-  const result = await sessionManager.executeAction(input.gameId, gameAction)
+  const result = await sessionManager.executeAction(input.gameId, gameAction, input.playerId)
 
   if ('error' in result) {
     return {

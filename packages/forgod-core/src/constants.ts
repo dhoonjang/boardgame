@@ -1,5 +1,5 @@
-import type { HeroClass, HexCoord, HexTile, Revelation, Skill, TileType } from './types.js'
-import { coordToKey } from './types.js'
+import type { HeroClass, HexCoord, HexTile, Revelation, Skill, TileType } from './types'
+import { coordToKey } from './types'
 
 // 지형별 이동력 소모
 // number: 고정 이동력 소모
@@ -406,6 +406,7 @@ export interface MonsterDefinition {
   maxHealth: number
   diceIndices: number[]  // 2~6개의 주사위 인덱스
   drops: MonsterDrops    // 처치 시 드롭하는 제물
+  adjacentTiles: HexCoord[]  // 인접한 이동 가능 타일들 (0번부터 순서대로)
   description: string
 }
 
@@ -414,70 +415,109 @@ export const MONSTERS: MonsterDefinition[] = [
     id: 'harpy',
     name: 'Harpy',
     nameKo: '하피',
-    position: { q: 4, r: 0 },
+    position: { q: 7, r: -3 },
     maxHealth: 20,
     diceIndices: [0, 1, 2],  // 주사위 1, 2, 3
     drops: { circle: 1, triangle: 1, square: 0 },
+    adjacentTiles: [
+      { q: 7, r: -4 },   // 0: 좌상 방향, 평지
+      { q: 6, r: -2 },   // 1: 좌하 방향, 평지
+      { q: 7, r: -2 },   // 2: 우하 방향, 평지
+    ],
     description: '주사위 합이 7 이상이면 피해를 준 후에 인접한 용사들을 한 칸 밀어냄',
   },
   {
     id: 'grindylow',
     name: 'Grindylow',
     nameKo: '그린딜로',
-    position: { q: -4, r: -2 },
+    position: { q: -7, r: 3 },
     maxHealth: 25,
     diceIndices: [1, 3],  // 주사위 2, 4
     drops: { circle: 0, triangle: 1, square: 1 },
+    adjacentTiles: [
+      { q: -6, r: 3 },   // 0: 오른쪽 방향, 늪
+      { q: -6, r: 2 },   // 1: 우상 방향, 늪
+      { q: -7, r: 2 },   // 2: 좌상 방향, 늪
+    ],
     description: '주사위 합이 7 이상이면 피해 받은 용사가 속박됨',
   },
   {
     id: 'lich',
     name: 'Lich',
     nameKo: '리치',
-    position: { q: 3, r: 2 },
+    position: { q: 6, r: 3 },
     maxHealth: 30,
     diceIndices: [3, 4, 5],  // 주사위 4, 5, 6
     drops: { circle: 3, triangle: 1, square: 1 },
+    adjacentTiles: [
+      { q: 7, r: 2 },    // 0: 우상 방향, 평지
+      { q: 6, r: 2 },    // 1: 좌상 방향, 평지
+      { q: 5, r: 3 },    // 2: 왼쪽 방향, 평지
+      { q: 5, r: 4 },    // 3: 좌하 방향, 평지
+    ],
     description: '주사위 합이 15 이상이면 몬스터들이 메테오 피해 무시',
   },
   {
     id: 'troll',
     name: 'Troll',
     nameKo: '트롤',
-    position: { q: -2, r: 8 },
+    position: { q: -6, r: 8 },
     maxHealth: 35,
     diceIndices: [0, 5],  // 주사위 1, 6
     drops: { circle: 1, triangle: 0, square: 2 },
+    adjacentTiles: [
+      { q: -5, r: 8 },   // 0: 오른쪽 방향, 언덕
+      { q: -5, r: 7 },   // 1: 우상 방향, 언덕
+      { q: -6, r: 7 },   // 2: 좌상 방향, 언덕
+      { q: -7, r: 8 },   // 3: 왼쪽 방향, 언덕
+      { q: -6, r: 9 },   // 4: 우하 방향, 언덕
+    ],
     description: '타락한 용사에게는 주사위 합이 홀수일 때만 공격',
   },
   {
     id: 'hydra',
     name: 'Hydra',
     nameKo: '히드라',
-    position: { q: -5, r: 0 },
+    position: { q: -7, r: -2 },
     maxHealth: 40,
     diceIndices: [0, 1, 4, 5],  // 주사위 1, 2, 5, 6
     drops: { circle: 2, triangle: 4, square: 1 },
+    adjacentTiles: [
+      { q: -6, r: -2 },  // 0: 오른쪽 방향, 늪
+      { q: -8, r: -1 },  // 1: 좌하 방향, 늪
+      { q: -7, r: -1 },  // 2: 우하 방향, 늪
+    ],
     description: '주사위 합이 15 이상이면 잃은 체력의 두 배 회복',
   },
   {
     id: 'golem',
     name: 'Golem',
     nameKo: '골렘',
-    position: { q: 4, r: -4 },
+    position: { q: 7, r: -8 },
     maxHealth: 50,
     diceIndices: [4, 5],  // 주사위 5, 6
     drops: { circle: 1, triangle: 1, square: 3 },
+    adjacentTiles: [
+      { q: 8, r: -8 },   // 0: 오른쪽 방향, 평지
+      { q: 8, r: -9 },   // 1: 우상 방향, 평지
+      { q: 7, r: -9 },   // 2: 좌상 방향, 평지
+      { q: 6, r: -8 },   // 3: 왼쪽 방향, 평지
+    ],
     description: '주사위 합이 12면 기본 공격 피해 무시',
   },
   {
     id: 'balrog',
     name: 'Balrog',
     nameKo: '발록',
-    position: { q: 0, r: 3 },
+    position: { q: 0, r: 8 },
     maxHealth: 60,
     diceIndices: [0, 1, 2, 3, 4, 5],  // 주사위 1, 2, 3, 4, 5, 6
     drops: { circle: 3, triangle: 3, square: 3 },
+    adjacentTiles: [
+      { q: 1, r: 7 },    // 0: 우상 방향, 평지
+      { q: 0, r: 7 },    // 1: 좌상 방향, 평지
+      { q: -1, r: 8 },   // 2: 왼쪽 방향, 평지
+    ],
     description: '발록이 죽으면 화염 타일이 피해를 주지 않음',
   },
 ]

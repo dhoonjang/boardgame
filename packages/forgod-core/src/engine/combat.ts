@@ -1,7 +1,7 @@
-import type { GameState, Player, Monster, HexCoord, GameEvent, TileType } from '../types.js'
-import { deserializeBoard, coordToKey } from '../types.js'
-import { getTile, getDistance, getNeighbors, coordEquals } from '../hex.js'
-import { TILE_EFFECTS, DEATH_RESPAWN_TURNS, STARTING_POSITIONS } from '../constants.js'
+import type { GameState, Player, Monster, HexCoord, GameEvent, TileType } from '../types'
+import { deserializeBoard, coordToKey } from '../types'
+import { getTile } from '../hex'
+import { TILE_EFFECTS, DEATH_RESPAWN_TURNS, STARTING_POSITIONS } from '../constants'
 
 /**
  * 피해 계산 결과
@@ -156,49 +156,18 @@ export function applyDamageToMonster(
  * 몬스터 제물 분배
  * 막타: 절반
  * 나머지: 인접한 플레이어에게 순환 분배
+ *
+ * TODO: 제물 시스템 구현 시 Player에 sacrifice 필드 추가 후 구현
+ * 현재는 monsterEssence가 아닌 별도 제물 자원으로 분배해야 함
  */
 function distributeMonsterSacrifice(
-  state: GameState,
-  monster: Monster,
-  killerId: string
+  _state: GameState,
+  _monster: Monster,
+  _killerId: string
 ): GameState {
-  // 제물 총량은 몬스터의 최대 체력 기반 (예: maxHealth / 10)
-  const totalSacrifice = Math.floor(monster.maxHealth / 10)
-  const killerShare = Math.ceil(totalSacrifice / 2)
-  const remaining = totalSacrifice - killerShare
-
-  let newState = {
-    ...state,
-    players: state.players.map(p =>
-      p.id === killerId
-        ? { ...p, monsterEssence: p.monsterEssence + killerShare }
-        : p
-    ),
-  }
-
-  if (remaining > 0) {
-    // 인접한 플레이어 찾기
-    const adjacentPlayers = state.players.filter(p =>
-      !p.isDead && p.id !== killerId && getDistance(monster.position, p.position) === 1
-    )
-
-    if (adjacentPlayers.length > 0) {
-      const sharePerPlayer = Math.floor(remaining / adjacentPlayers.length)
-      if (sharePerPlayer > 0) {
-        newState = {
-          ...newState,
-          players: newState.players.map(p => {
-            if (adjacentPlayers.some(ap => ap.id === p.id)) {
-              return { ...p, monsterEssence: p.monsterEssence + sharePerPlayer }
-            }
-            return p
-          }),
-        }
-      }
-    }
-  }
-
-  return newState
+  // 제물 시스템이 아직 구현되지 않음
+  // monsterEssence는 공격으로 가한 피해만큼만 획득 (제물과 별개)
+  return _state
 }
 
 /**

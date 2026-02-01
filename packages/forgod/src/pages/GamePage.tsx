@@ -6,6 +6,7 @@ import { useGameStore } from '../store/gameStore'
 export default function GamePage() {
   const { gameId } = useParams<{ gameId: string }>()
   const {
+    playerId,
     isLoading,
     error,
     roundNumber,
@@ -21,9 +22,11 @@ export default function GamePage() {
 
   useEffect(() => {
     if (gameId) {
-      loadGame(gameId)
+      // 스토어에 playerId가 없으면 기본값 사용 (멀티플레이어 시 세션에서 가져와야 함)
+      const effectivePlayerId = playerId || 'player-1'
+      loadGame(gameId, effectivePlayerId)
     }
-  }, [gameId, loadGame])
+  }, [gameId, playerId, loadGame])
 
   if (isLoading && !players.length) {
     return (

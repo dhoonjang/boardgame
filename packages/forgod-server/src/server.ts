@@ -17,7 +17,7 @@ import {
   getValidActionsSchema,
   executeAction,
   executeActionSchema,
-} from './tools/index.js'
+} from './tools/index'
 
 // Tool 정의
 const TOOLS = [

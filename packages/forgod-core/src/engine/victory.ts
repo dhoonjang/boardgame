@@ -1,6 +1,6 @@
-import type { GameState, Player, GameEvent } from '../types.js'
-import { deserializeBoard } from '../types.js'
-import { getTile } from '../hex.js'
+import type { GameState, Player, GameEvent } from '../types'
+import { deserializeBoard } from '../types'
+import { getTile } from '../hex'
 
 export type VictoryType = 'demon_king' | 'angel' | 'revelation' | null
 
@@ -27,7 +27,7 @@ export function checkVictoryCondition(state: GameState): VictoryCheckResult {
     const board = deserializeBoard(state.board)
     const playerTile = getTile(board, player.position)
 
-    // 1. 마왕 승리 트리거: 타락 + 타락 주사위 6 + 마왕성 진입
+    // 1. 마왕 승리 트리거: 타락 + 마검 보유 + 신전 진입
     if (checkDemonKingTrigger(player, playerTile?.type)) {
       const winner = findDemonKingWinner(state.players)
       return {
@@ -75,13 +75,13 @@ export function checkVictoryCondition(state: GameState): VictoryCheckResult {
 /**
  * 마왕 승리 트리거 조건 체크
  * - 타락 상태
- * - 타락 주사위가 6 (최대치)
- * - 마왕성에 진입
+ * - 마검 보유
+ * - 신전에 진입
  */
 function checkDemonKingTrigger(player: Player, tileType?: string): boolean {
   if (player.state !== 'corrupt') return false
-  if (player.corruptDice !== 6) return false
-  return tileType === 'castle'
+  if (!player.hasDemonSword) return false
+  return tileType === 'temple'
 }
 
 /**
