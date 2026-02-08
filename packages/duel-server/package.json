@@ -1,0 +1,26 @@
+{
+  "name": "@duel/server",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "dev": "tsup src/index.ts --format esm --dts --watch --onSuccess 'node dist/index.js'",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@duel/core": "workspace:*",
+    "@hono/node-server": "^1.8.0",
+    "hono": "^4.0.0",
+    "socket.io": "^4.7.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "socket.io-client": "^4.7.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^2.0.0"
+  }
+}

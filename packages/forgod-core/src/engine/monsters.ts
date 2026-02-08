@@ -76,9 +76,18 @@ function processMonsterEffect(
   const events: GameEvent[] = []
   let players = [...allPlayers]
 
-  // 공격 대상 결정: 주사위합 % 인접타일수
-  const targetIndex = diceSum % adjacentPlayers.length
-  const targetPlayer = adjacentPlayers[targetIndex]
+  // 공격 대상 결정: 주사위합 % 인접타일수 → 해당 타일에 있는 용사 공격
+  const monsterDef = MONSTERS.find(m => m.id === monsterId)
+  if (!monsterDef) return { players, events }
+
+  const targetTileIndex = diceSum % monsterDef.adjacentTiles.length
+  const targetTile = monsterDef.adjacentTiles[targetTileIndex]
+  const targetPlayer = adjacentPlayers.find(p =>
+    p.position.q === targetTile.q && p.position.r === targetTile.r
+  )
+
+  // 해당 타일에 용사가 없으면 공격하지 않음
+  if (!targetPlayer) return { players, events }
 
   switch (monsterId) {
     case 'hydra': {
@@ -105,9 +114,9 @@ function processMonsterEffect(
     }
 
     case 'troll': {
-      // 트롤: 타락한 용사에게는 주사위 합이 음수일 때만 공격
-      // (실제로 음수가 될 수 없으므로 타락 용사는 공격 안 받음)
-      if (targetPlayer.state !== 'corrupt') {
+      // 트롤: 타락한 용사에게는 주사위 합이 홀수일 때만 공격
+      const shouldAttack = targetPlayer.state !== 'corrupt' || (diceSum % 2 === 1)
+      if (shouldAttack) {
         const damage = diceSum
         const result = applyMonsterDamage(players, targetPlayer.id, damage, monster.id)
         players = result.players

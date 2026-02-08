@@ -88,6 +88,14 @@ export interface Player {
   remainingMovement: number | null // 남은 이동력 (null이면 아직 주사위 안 굴림)
   leftoverMovement: number         // 다음 라운드 턴 순서 결정용
   turnCompleted: boolean           // 이번 라운드 턴 완료 여부
+  // 버프/상태 필드
+  ironStanceActive: boolean        // 무적 태세 활성 (피해를 힘 수치만큼 감소)
+  poisonActive: boolean            // 독 바르기 활성 (다음 기본공격에 소모)
+  isStealthed: boolean             // 은신 활성 (모든 피해 면역)
+  isEnhanced: boolean              // 스킬 강화 활성 (다음 1회 스킬에 소모)
+  isBound: boolean                 // 속박 (다음 턴 이동 불가, 이후 해제)
+  traps: HexCoord[]                // 그림자 함정 위치 (최대 3개)
+  hasUsedBasicAttack: boolean      // 이번 턴 기본공격 사용 여부
 }
 
 // 스킬
@@ -129,6 +137,19 @@ export interface Monster {
   isDead: boolean
 }
 
+// 몬스터 라운드 버프
+export interface MonsterRoundBuffs {
+  golemBasicAttackImmune: boolean   // 골렘 sum=12 기본공격 면역 (다음 라운드까지)
+  meteorImmune: boolean             // 리치 sum>=15 메테오 면역 (다음 라운드까지)
+  fireTileDisabled: boolean         // 발록 사망 시 화염 비활성 (부활 시 해제)
+}
+
+// 분신 정보
+export interface CloneInfo {
+  playerId: string
+  position: HexCoord
+}
+
 // 게임 상태 (직렬화 가능한 형태)
 export interface GameState {
   id: string
@@ -141,6 +162,8 @@ export interface GameState {
   monsterDice: number[]           // 6개의 몬스터 주사위
   revelationDeck: Revelation[]
   demonSwordPosition: HexCoord | null  // 마검 위치 (null이면 누군가 획득함)
+  clones: CloneInfo[]             // 법사 분신 목록
+  monsterRoundBuffs: MonsterRoundBuffs  // 몬스터 라운드 버프
 }
 
 // 직렬화된 보드 (JSON 저장용)
@@ -172,6 +195,8 @@ export type GameAction =
   | { type: 'APPLY_CORRUPT_DICE'; stat: keyof Stats }  // 타락 주사위 능력치에 적용
   | { type: 'CHOOSE_HOLY' }  // 부활 시 신성 선택
   | { type: 'DRAW_DEMON_SWORD' }  // 마검 뽑기
+  | { type: 'CHOOSE_CORRUPTION'; accept: boolean }  // 타락 용사 처치 후 타락 여부 선택
+  | { type: 'CHOOSE_ESCAPE_TILE'; position: HexCoord }  // 산/호수 탈출 시 목적지 선택
 
 // 액션 결과
 export interface ActionResult {

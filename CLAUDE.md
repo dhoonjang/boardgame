@@ -30,6 +30,7 @@ boardgame/
 
 ### 현재 게임
 - **forgod**: For God - 신과 마왕 사이에서 운명을 선택하는 3~6인용 전략 보드게임
+- **duel**: Bluff Duel - 인디언 포커 스타일 2인 블러프 카드 게임 (Socket.IO 실시간 통신)
 
 ## 패키지 구조 패턴
 
@@ -80,6 +81,29 @@ pnpm --filter forgod dev
 pnpm --filter @forgod/core build
 pnpm --filter @forgod/core test
 pnpm --filter @forgod/server start
+```
+
+## duel 게임 명령어
+
+```bash
+# 개발
+pnpm duel:dev            # duel 개발 서버 (Vite HMR)
+pnpm duel:server:dev     # duel Socket.IO 서버 개발 모드 (watch)
+
+# 빌드
+pnpm duel:build          # 전체 빌드 (core → duel 순서)
+
+# 테스트
+pnpm duel:test           # duel-core + duel-server 테스트
+
+# 서버
+pnpm duel:server         # duel 서버 시작 (포트 3002)
+
+# 개별 패키지
+pnpm --filter duel dev
+pnpm --filter @duel/core build
+pnpm --filter @duel/core test
+pnpm --filter @duel/server start
 ```
 
 ## 새 게임 추가 시

@@ -1,3 +1,10 @@
+---
+description: 테스트를 실행하고 모든 테스트가 통과할 때까지 코드를 수정합니다.
+allowed-tools: Read, Edit, Grep, Glob, Bash
+---
+
+# /fix-tests
+
 테스트를 실행하고 모든 테스트가 통과할 때까지 코드를 수정합니다.
 
 ## 대상 패키지: $ARGUMENTS

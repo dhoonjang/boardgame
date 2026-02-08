@@ -358,9 +358,9 @@ export const DEATH_RESPAWN_TURNS = 3
 
 export const TILE_EFFECTS = {
   village: { selfClassHeal: 10, otherClassHeal: 5 },
-  fire: { baseDamage: 10 }, 
-  temple: { corruptDamage: 10 },
-  castle: { holyDamage: 10 },
+  fire: { baseDamage: 10 },
+  temple: { corruptDamage: 0 },  // 타락 용사 신전 진입 불가 (마검 보유 시 가능, 피해 없음)
+  castle: { holyDamage: 0 },     // 마왕성 진입 시 피해 없음
 }
 
 // 게임 규칙 텍스트

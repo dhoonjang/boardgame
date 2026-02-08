@@ -13,11 +13,12 @@ import type {
   DiceRoller,
 } from '../types'
 import { deserializeBoard, defaultDiceRoller } from '../types'
-import { GAME_BOARD, STARTING_POSITIONS, MONSTERS, TERRAIN_MOVEMENT_COST, DEATH_RESPAWN_TURNS, SKILLS_BY_CLASS, getMaxHealthByLevel } from '../constants'
+import { GAME_BOARD, STARTING_POSITIONS, MONSTERS, TERRAIN_MOVEMENT_COST, DEATH_RESPAWN_TURNS, SKILLS_BY_CLASS, getMaxHealthByLevel, TILE_EFFECTS } from '../constants'
 import { getNeighbors, getDistance, getTile, coordEquals } from '../hex'
 import { useSkill, canUseSkill } from './skills'
-import { completeRevelation } from './revelations'
+import { completeRevelation, createRevelationDeck, drawRevelation } from './revelations'
 import { checkVictoryCondition } from './victory'
+import { processMonsterPhase as processMonsterPhaseFromModule } from './monsters'
 
 // Simple UUID generator for cross-platform compatibility
 function generateId(): string {
@@ -90,8 +91,14 @@ export class GameEngine {
       board: GAME_BOARD,  // 고정 보드 사용
       monsters,
       monsterDice: [1, 1, 1, 1, 1, 1],
-      revelationDeck: [],
+      revelationDeck: createRevelationDeck(),
       demonSwordPosition,
+      clones: [],
+      monsterRoundBuffs: {
+        golemBasicAttackImmune: false,
+        meteorImmune: false,
+        fireTileDisabled: false,
+      },
     }
   }
 
@@ -477,9 +484,17 @@ export class GameEngine {
         usedSkillCost: 0,
         // 턴 관련 필드
         turnPhase: 'move' as const,
-        remainingMovement: index === 0 ? null : null, // 첫 플레이어부터 시작
+        remainingMovement: null,
         leftoverMovement: 0,
         turnCompleted: false,
+        // 버프/상태 필드
+        ironStanceActive: false,
+        poisonActive: false,
+        isStealthed: false,
+        isEnhanced: false,
+        isBound: false,
+        traps: [],
+        hasUsedBasicAttack: false,
       }
     })
   }
@@ -684,6 +699,54 @@ export class GameEngine {
     let message = `(${position.q}, ${position.r})로 이동했습니다. (이동력 -${actualCost}, 남은: ${newRemainingMovement})`
     if (learnsDemonSwordPosition && !currentPlayer.knowsDemonSwordPosition) {
       message += ' 마왕성에서 마검의 위치를 알게 되었습니다!'
+    }
+
+    // 화염 타일 경유 피해 (이동한 타일이 화염이면 피해)
+    if (targetTile.type === 'fire' && currentPlayer.state !== 'corrupt' && !state.monsterRoundBuffs.fireTileDisabled) {
+      const fireDamage = TILE_EFFECTS.fire.baseDamage
+      newPlayers = newPlayers.map(p => {
+        if (p.id !== currentPlayer.id) return p
+        const newHealth = Math.max(0, p.health - fireDamage)
+        const isDead = newHealth <= 0
+        return {
+          ...p,
+          health: newHealth,
+          isDead,
+          deathTurnsRemaining: isDead ? DEATH_RESPAWN_TURNS : p.deathTurnsRemaining,
+        }
+      })
+      message += ` 화염 타일 피해 ${fireDamage}!`
+      events.push({ type: 'PLAYER_ATTACKED', attackerId: 'fire', targetId: currentPlayer.id, damage: fireDamage })
+      const updatedPlayer = newPlayers.find(p => p.id === currentPlayer.id)
+      if (updatedPlayer?.isDead) {
+        events.push({ type: 'PLAYER_DIED', playerId: currentPlayer.id })
+      }
+    }
+
+    // 함정 체크 (다른 플레이어의 함정을 밟았는지)
+    for (const otherPlayer of state.players) {
+      if (otherPlayer.id === currentPlayer.id || otherPlayer.isDead) continue
+      const trapIndex = otherPlayer.traps.findIndex(t => t.q === position.q && t.r === position.r)
+      if (trapIndex !== -1) {
+        const trapDamage = otherPlayer.stats.dexterity[0] + otherPlayer.stats.dexterity[1]
+        // 함정 제거 + 함정 주인 은신 활성
+        newPlayers = newPlayers.map(p => {
+          if (p.id === currentPlayer.id) {
+            const newHealth = Math.max(0, p.health - trapDamage)
+            return { ...p, health: newHealth, isDead: newHealth <= 0, deathTurnsRemaining: newHealth <= 0 ? DEATH_RESPAWN_TURNS : p.deathTurnsRemaining }
+          }
+          if (p.id === otherPlayer.id) {
+            return { ...p, traps: p.traps.filter((_, i) => i !== trapIndex), isStealthed: true }
+          }
+          return p
+        })
+        events.push({ type: 'PLAYER_ATTACKED', attackerId: otherPlayer.id, targetId: currentPlayer.id, damage: trapDamage })
+        message += ` 함정! ${otherPlayer.name}의 함정에 걸려 ${trapDamage} 피해!`
+        const updatedPlayer2 = newPlayers.find(p => p.id === currentPlayer.id)
+        if (updatedPlayer2?.isDead) {
+          events.push({ type: 'PLAYER_DIED', playerId: currentPlayer.id })
+        }
+      }
     }
 
     return {
@@ -1044,8 +1107,19 @@ export class GameEngine {
       }
     }
 
+    // 마을 회복 처리 (턴 종료 시)
+    const board = deserializeBoard(state.board)
+    const playerTile = getTile(board, currentPlayer.position)
+    let villageHeal = 0
+    if (playerTile?.type === 'village' && !currentPlayer.isDead) {
+      const healAmount = playerTile.villageClass === currentPlayer.heroClass
+        ? TILE_EFFECTS.village.selfClassHeal
+        : TILE_EFFECTS.village.otherClassHeal
+      villageHeal = Math.min(healAmount, currentPlayer.maxHealth - currentPlayer.health)
+    }
+
     // 행동 단계에서 END_TURN: 턴 완료 및 다음 턴으로
-    // leftoverMovement 저장, usedSkillCost 리셋
+    // leftoverMovement 저장, usedSkillCost 리셋, hasUsedBasicAttack 리셋
     let newPlayers = state.players.map(p =>
       p.id === currentPlayer.id
         ? {
@@ -1054,6 +1128,8 @@ export class GameEngine {
             remainingMovement: null,
             turnPhase: 'move' as const, // 다음 라운드를 위해 리셋
             usedSkillCost: 0, // 스킬 비용 리셋
+            hasUsedBasicAttack: false, // 기본 공격 사용 리셋
+            health: p.health + villageHeal, // 마을 회복
           }
         : p
     )
@@ -1099,6 +1175,18 @@ export class GameEngine {
         }
         return p
       })
+
+      // 부활한 플레이어에게 계시 카드 1장 지급 (천사/마왕 중 랜덤)
+      let revState = { ...newState, players: newPlayers }
+      for (const evt of events) {
+        if (evt.type === 'PLAYER_RESPAWNED') {
+          const source = Math.random() < 0.5 ? 'angel' as const : 'demon' as const
+          const revResult = drawRevelation(revState, evt.playerId, source)
+          revState = revResult.newState
+        }
+      }
+      newPlayers = revState.players
+      newState = { ...newState, revelationDeck: revState.revelationDeck }
 
       // 스킬 쿨다운 감소
       newPlayers = newPlayers.map(p => ({
@@ -1167,73 +1255,10 @@ export class GameEngine {
   }
 
   /**
-   * 몬스터 단계 처리
+   * 몬스터 단계 처리 (monsters.ts 모듈에 위임)
    */
   private processMonsterPhase(state: GameState): { newState: GameState; events: GameEvent[] } {
-    const events: GameEvent[] = []
-
-    // 6개 몬스터 주사위 굴리기
-    const monsterDice = Array.from({ length: 6 }, () => this.rollDice())
-
-    let newState = { ...state, monsterDice }
-    let newPlayers = [...state.players]
-
-    // 각 몬스터 처리
-    for (const monster of state.monsters) {
-      if (monster.isDead) continue
-
-      // 몬스터의 주사위 합 계산: 작은 순으로 정렬 후 diceIndices가 가리키는 주사위들을 더함
-      const sortedDice = [...monsterDice].sort((a, b) => a - b)
-      const diceSum = monster.diceIndices.reduce((sum, idx) => sum + sortedDice[idx], 0)
-
-      // 인접한 용사 찾기
-      const adjacentPlayers = newPlayers.filter(p =>
-        !p.isDead && getDistance(monster.position, p.position) === 1
-      )
-
-      if (adjacentPlayers.length === 0) continue
-
-      // 공격 대상 결정: 주사위합 % 인접타일수
-      const targetIndex = diceSum % adjacentPlayers.length
-      const targetPlayer = adjacentPlayers[targetIndex]
-
-      // 몬스터별 고유 효과 및 피해 (기본: 주사위 합만큼)
-      const damage = diceSum
-
-      // 피해 적용
-      const newHealth = Math.max(0, targetPlayer.health - damage)
-      const isDead = newHealth <= 0
-
-      newPlayers = newPlayers.map(p =>
-        p.id === targetPlayer.id
-          ? {
-              ...p,
-              health: newHealth,
-              isDead,
-              deathTurnsRemaining: isDead ? DEATH_RESPAWN_TURNS : p.deathTurnsRemaining,
-            }
-          : p
-      )
-
-      events.push({
-        type: 'PLAYER_ATTACKED',
-        attackerId: monster.id,
-        targetId: targetPlayer.id,
-        damage,
-      })
-
-      if (isDead) {
-        events.push({
-          type: 'PLAYER_DIED',
-          playerId: targetPlayer.id,
-        })
-      }
-    }
-
-    return {
-      newState: { ...newState, players: newPlayers },
-      events,
-    }
+    return processMonsterPhaseFromModule(state)
   }
 
   private handleCompleteRevelation(
