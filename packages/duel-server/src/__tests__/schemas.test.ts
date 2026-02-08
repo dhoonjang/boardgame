@@ -7,9 +7,9 @@ describe('GameActionSchema', () => {
     expect(result.success).toBe(true)
   })
 
-  it('PEEK 검증', () => {
+  it('PEEK은 더 이상 유효하지 않음', () => {
     const result = GameActionSchema.safeParse({ type: 'PEEK' })
-    expect(result.success).toBe(true)
+    expect(result.success).toBe(false)
   })
 
   it('SWAP 검증', () => {

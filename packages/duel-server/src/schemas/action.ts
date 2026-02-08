@@ -2,7 +2,6 @@ import { z } from 'zod'
 
 export const GameActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('START_ROUND') }),
-  z.object({ type: z.literal('PEEK') }),
   z.object({ type: z.literal('SWAP') }),
   z.object({ type: z.literal('SKIP_ABILITY') }),
   z.object({ type: z.literal('RAISE'), amount: z.number().int().min(1) }),

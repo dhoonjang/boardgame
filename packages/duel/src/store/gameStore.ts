@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { PlayerView, ValidAction, GameAction, GameEvent } from '@duel/core'
+import type { PlayerView, ValidAction, GameAction, GameEvent, AIExpression } from '@duel/server/game'
 import socket from '../socket/client'
 
 interface DuelStore {
@@ -16,6 +16,11 @@ interface DuelStore {
   validActions: ValidAction[]
   lastEvents: GameEvent[]
 
+  // AI 상태
+  isAIGame: boolean
+  aiExpression: AIExpression | null
+  aiChatMessage: string | null
+
   // UI 상태
   error: string | null
   opponentName: string | null
@@ -24,6 +29,7 @@ interface DuelStore {
   connect(): void
   disconnect(): void
   createGame(playerName: string): void
+  createAIGame(playerName: string, personalityName?: string): void
   joinGame(gameId: string, playerName: string): void
   sendAction(action: GameAction): void
   setError(error: string | null): void
@@ -42,6 +48,9 @@ export const useGameStore = create<DuelStore>((set, get) => ({
   playerView: null,
   validActions: [],
   lastEvents: [],
+  isAIGame: false,
+  aiExpression: null,
+  aiChatMessage: null,
   error: null,
   opponentName: null,
 
@@ -85,6 +94,10 @@ export const useGameStore = create<DuelStore>((set, get) => ({
       set({ opponentName: null, error: '상대방이 나갔습니다.' })
     })
 
+    socket.on('ai-state', ({ expression, message }) => {
+      set({ aiExpression: expression, aiChatMessage: message })
+    })
+
     socket.on('error', ({ message }) => {
       set({ error: message })
     })
@@ -99,6 +112,7 @@ export const useGameStore = create<DuelStore>((set, get) => ({
     socket.off('action-result')
     socket.off('opponent-joined')
     socket.off('opponent-left')
+    socket.off('ai-state')
     socket.off('error')
     socket.disconnect()
     set({ isConnected: false })
@@ -106,13 +120,19 @@ export const useGameStore = create<DuelStore>((set, get) => ({
 
   createGame(playerName: string) {
     const playerId = generatePlayerId()
-    set({ playerId, playerName, error: null })
+    set({ playerId, playerName, error: null, isAIGame: false })
     socket.emit('create-game', { player: { id: playerId, name: playerName } })
+  },
+
+  createAIGame(playerName: string, personalityName?: string) {
+    const playerId = generatePlayerId()
+    set({ playerId, playerName, error: null, isAIGame: true })
+    socket.emit('create-ai-game', { player: { id: playerId, name: playerName }, personalityName })
   },
 
   joinGame(gameId: string, playerName: string) {
     const playerId = generatePlayerId()
-    set({ playerId, playerName, gameId, error: null })
+    set({ playerId, playerName, gameId, error: null, isAIGame: false })
     socket.emit('join-game', { gameId, player: { id: playerId, name: playerName } })
   },
 
@@ -135,6 +155,9 @@ export const useGameStore = create<DuelStore>((set, get) => ({
       playerView: null,
       validActions: [],
       lastEvents: [],
+      isAIGame: false,
+      aiExpression: null,
+      aiChatMessage: null,
       error: null,
       opponentName: null,
     })

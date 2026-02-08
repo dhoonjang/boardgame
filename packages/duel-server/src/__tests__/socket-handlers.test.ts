@@ -4,7 +4,7 @@ import { Server } from 'socket.io'
 import { io as ioc, type Socket as ClientSocket } from 'socket.io-client'
 import { SessionManager } from '../session'
 import { registerSocketHandlers } from '../socket-handlers'
-import type { PlayerView } from '@duel/core'
+import type { PlayerView } from '../game'
 
 let portCounter = 3100
 
@@ -143,10 +143,8 @@ describe('Socket Handlers', () => {
     expect(state1.playerView.phase).toBe('ability')
     expect(state2.playerView.phase).toBe('ability')
 
-    // 핵심: 내 카드는 안 보이고, 상대 카드는 보임
-    expect(state1.playerView.myCard).toBeNull()
+    // 핵심: 상대 카드는 보임 (인디언 포커)
     expect(state1.playerView.opponentCard).not.toBeNull()
-    expect(state2.playerView.myCard).toBeNull()
     expect(state2.playerView.opponentCard).not.toBeNull()
   })
 })

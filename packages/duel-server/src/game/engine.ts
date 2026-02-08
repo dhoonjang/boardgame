@@ -1,12 +1,12 @@
 import type {
   GameState, GameAction, ActionResult, ValidAction, PlayerView,
   Player, Card, Shuffler, GameEvent,
-} from '../types'
+} from './types'
 import {
-  INITIAL_CHIPS, ANTE_AMOUNT, INITIAL_PEEK_COUNT, INITIAL_SWAP_COUNT,
-  MAX_ROUNDS, FULL_DECK, MIN_RAISE_AMOUNT,
-} from '../constants'
-import { executePeek, executeSwap } from './abilities'
+  INITIAL_CHIPS, ANTE_AMOUNT, INITIAL_SWAP_COUNT,
+  FULL_DECK, MIN_RAISE_AMOUNT,
+} from './constants'
+import { executeSwap } from './abilities'
 import { executeRaise, executeCall, executeFold } from './betting'
 import { resolveShowdown } from './showdown'
 
@@ -41,11 +41,9 @@ export class GameEngine {
       name: player1.name,
       chips: INITIAL_CHIPS,
       card: null,
-      peekCount: INITIAL_PEEK_COUNT,
       swapCount: INITIAL_SWAP_COUNT,
       currentBet: 0,
       hasFolded: false,
-      hasPeeked: false,
       hasUsedAbility: false,
     }
 
@@ -54,11 +52,9 @@ export class GameEngine {
       name: '',
       chips: INITIAL_CHIPS,
       card: null,
-      peekCount: INITIAL_PEEK_COUNT,
       swapCount: INITIAL_SWAP_COUNT,
       currentBet: 0,
       hasFolded: false,
-      hasPeeked: false,
       hasUsedAbility: false,
     }
 
@@ -70,7 +66,7 @@ export class GameEngine {
       pot: 0,
       phase: 'waiting',
       roundNumber: 0,
-      maxRounds: MAX_ROUNDS,
+      maxRounds: 0, // 무제한 — 칩 0일 때만 종료
       currentPlayerIndex: 0,
       firstPlayerIndex: 0,
       lastRaisePlayerIndex: null,
@@ -89,11 +85,9 @@ export class GameEngine {
       name: player2.name,
       chips: INITIAL_CHIPS,
       card: null,
-      peekCount: INITIAL_PEEK_COUNT,
       swapCount: INITIAL_SWAP_COUNT,
       currentBet: 0,
       hasFolded: false,
-      hasPeeked: false,
       hasUsedAbility: false,
     }
 
@@ -126,8 +120,6 @@ export class GameEngine {
     }
 
     switch (action.type) {
-      case 'PEEK':
-        return this.handleAbilityResult(state, executePeek(state, actingPlayerId))
       case 'SWAP':
         return this.handleAbilityResult(state, executeSwap(state, actingPlayerId))
       case 'SKIP_ABILITY':
@@ -158,11 +150,6 @@ export class GameEngine {
 
     const newRoundNumber = state.roundNumber + 1
 
-    // 최대 라운드 초과 확인
-    if (newRoundNumber > state.maxRounds) {
-      return this.endGame(state)
-    }
-
     // 덱 준비: 새 라운드마다 전체 10장으로 리셋 후 셔플
     const deck = this.shuffler.shuffle([...FULL_DECK])
 
@@ -187,7 +174,6 @@ export class GameEngine {
         card: card0,
         currentBet: ante0,
         hasFolded: false,
-        hasPeeked: false,
         hasUsedAbility: false,
         chips: p0Chips - ante0,
       },
@@ -196,7 +182,6 @@ export class GameEngine {
         card: card1,
         currentBet: ante1,
         hasFolded: false,
-        hasPeeked: false,
         hasUsedAbility: false,
         chips: p1Chips - ante1,
       },
@@ -352,15 +337,6 @@ export class GameEngine {
       }
     }
 
-    // 최대 라운드 도달 확인
-    if (state.roundNumber >= state.maxRounds) {
-      const endResult = this.endGame(state)
-      return {
-        ...endResult,
-        events: [...result.events, ...endResult.events],
-      }
-    }
-
     return result
   }
 
@@ -439,13 +415,6 @@ export class GameEngine {
 
     const actions: ValidAction[] = []
 
-    if (player.peekCount > 0 && !player.hasPeeked) {
-      actions.push({
-        type: 'PEEK',
-        description: `엿보기 (남은 ${player.peekCount}회)`,
-      })
-    }
-
     if (player.swapCount > 0 && state.deck.length > 0) {
       actions.push({
         type: 'SWAP',
@@ -520,20 +489,14 @@ export class GameEngine {
       currentPlayerIndex: state.currentPlayerIndex,
       firstPlayerIndex: state.firstPlayerIndex,
       myIndex,
-      // 핵심: 내 카드는 peek 했을 때만, 상대 카드는 항상 보임
-      myCard: me.hasPeeked ? me.card : null,
-      opponentCard: state.phase === 'round_end' || state.phase === 'game_over'
-        ? opponent.card  // 라운드/게임 종료 시에도 보임
-        : opponent.card, // 인디언 포커: 상대 카드 항상 보임
+      opponentCard: opponent.card,
       me: {
         id: me.id,
         name: me.name,
         chips: me.chips,
         currentBet: me.currentBet,
         hasFolded: me.hasFolded,
-        hasPeeked: me.hasPeeked,
         hasUsedAbility: me.hasUsedAbility,
-        peekCount: me.peekCount,
         swapCount: me.swapCount,
       },
       opponent: {
@@ -542,9 +505,7 @@ export class GameEngine {
         chips: opponent.chips,
         currentBet: opponent.currentBet,
         hasFolded: opponent.hasFolded,
-        hasPeeked: opponent.hasPeeked,
         hasUsedAbility: opponent.hasUsedAbility,
-        peekCount: opponent.peekCount,
         swapCount: opponent.swapCount,
       },
       winner: state.winner,

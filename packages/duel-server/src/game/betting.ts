@@ -1,4 +1,4 @@
-import type { GameState, ActionResult, GameEvent } from '../types'
+import type { GameState, ActionResult, GameEvent } from './types'
 
 /**
  * 레이즈: 칩을 더 걸기
@@ -125,6 +125,8 @@ export function executeFold(state: GameState, playerId: string): ActionResult {
     winner: opponent.id,
     potWon: state.pot,
     foldedPlayerId: playerId,
+    player0ChipChange: playerIndex === 0 ? -player.currentBet : state.pot - opponent.currentBet,
+    player1ChipChange: playerIndex === 1 ? -player.currentBet : state.pot - opponent.currentBet,
   }
 
   const events: GameEvent[] = [{
