@@ -1,7 +1,11 @@
 import type { Server, Socket } from 'socket.io'
-import type { GameAction } from '@duel/core'
+import type { GameAction } from './game'
 import { SessionManager } from './session'
 import { GameActionSchema } from './schemas/action'
+import { AIPlayer, AI_PLAYER_ID } from './ai/player'
+
+// gameId → AIPlayer 매핑
+const aiPlayers = new Map<string, AIPlayer>()
 
 export function registerSocketHandlers(io: Server, sessionManager: SessionManager): void {
   io.on('connection', (socket: Socket) => {
@@ -25,6 +29,43 @@ export function registerSocketHandlers(io: Server, sessionManager: SessionManage
       const view = engine.getPlayerView(gameState, player.id)
       socket.emit('game-state', { playerView: view })
       socket.emit('valid-actions', { actions: engine.getValidActions(gameState, player.id) })
+    })
+
+    // ─── create-ai-game ───
+    socket.on('create-ai-game', (data: { player: { id: string; name: string }; personalityName?: string }) => {
+      const { player, personalityName } = data
+
+      if (!player?.id || !player?.name) {
+        socket.emit('error', { message: '유효하지 않은 플레이어 정보입니다.' })
+        return
+      }
+
+      // 1. 게임 생성
+      const { gameId, gameState } = sessionManager.createGame(player.id, player.name, socket.id)
+      socket.join(gameId)
+      sessionManager.markAsAIGame(gameId)
+
+      socket.emit('game-created', { gameId })
+
+      // 2. AI 플레이어 생성 및 참가
+      const aiPlayer = new AIPlayer(gameId, io, socket.id, sessionManager, personalityName)
+      aiPlayers.set(gameId, aiPlayer)
+
+      // AI를 게임에 참가 (socketId 없이 직접 상태 업데이트)
+      const joinedState = sessionManager.getEngine().joinGame(gameState, {
+        id: AI_PLAYER_ID,
+        name: aiPlayer.name,
+      })
+      sessionManager.updateGame(gameId, joinedState)
+
+      // 3. human에게 상태 전송
+      const engine = sessionManager.getEngine()
+      const view = engine.getPlayerView(joinedState, player.id)
+      socket.emit('game-state', { playerView: view })
+      socket.emit('valid-actions', { actions: engine.getValidActions(joinedState, player.id) })
+      socket.emit('opponent-joined', { opponentName: aiPlayer.name })
+
+      console.log(`[AI Game] 게임 ${gameId} 생성 — AI 성격: ${aiPlayer.name}`)
     })
 
     // ─── join-game ───
@@ -105,11 +146,30 @@ export function registerSocketHandlers(io: Server, sessionManager: SessionManage
       // 게임 상태 업데이트
       sessionManager.updateGame(gameId, result.newState)
 
-      // 양쪽에게 각각의 PlayerView 전송
+      const isAI = sessionManager.isAIGame(gameId)
+
+      // 양쪽에게 각각의 PlayerView 전송 (AI 소켓은 건너뜀)
       for (const [pid, socketId] of room.players) {
         const view = engine.getPlayerView(result.newState, pid)
         io.to(socketId).emit('game-state', { playerView: view })
         io.to(socketId).emit('valid-actions', { actions: engine.getValidActions(result.newState, pid) })
+      }
+
+      // AI 게임이면 AI에게 통보
+      if (isAI) {
+        const aiPlayer = aiPlayers.get(gameId)
+        if (aiPlayer) {
+          const humanActionStr = action.type === 'RAISE'
+            ? `RAISE ${(action as any).amount}`
+            : action.type
+
+          // 인간이 START_ROUND → AI가 상대 카드 보고 리액션 (능력 단계 전)
+          if (action.type === 'START_ROUND' && result.newState.phase === 'ability') {
+            aiPlayer.reactToEvent('round_start', result.newState)
+          }
+
+          aiPlayer.onStateChanged(result.newState, humanActionStr)
+        }
       }
     })
 
@@ -131,6 +191,18 @@ function handleDisconnect(socket: Socket, io: Server, sessionManager: SessionMan
   if (!removed) return
 
   const { gameId } = removed
+
+  // AI 게임이면 AI 정리 및 방 전체 삭제
+  if (sessionManager.isAIGame(gameId)) {
+    const aiPlayer = aiPlayers.get(gameId)
+    if (aiPlayer) {
+      aiPlayer.dispose()
+      aiPlayers.delete(gameId)
+    }
+    sessionManager.removeGame(gameId)
+    socket.leave(gameId)
+    return
+  }
 
   const room = sessionManager.getRoom(gameId)
   if (room) {

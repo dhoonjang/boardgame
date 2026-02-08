@@ -1,4 +1,4 @@
-import type { GameState, ActionResult, GameEvent, RoundResult } from '../types'
+import type { GameState, ActionResult, GameEvent, RoundResult } from './types'
 
 /**
  * 쇼다운: 카드 공개 → 높은 카드 승리, 팟 획득
@@ -38,6 +38,9 @@ export function resolveShowdown(state: GameState): ActionResult {
     newPlayers[0] = { ...player0, chips: player0.chips + half + (state.firstPlayerIndex === 0 ? remainder : 0) }
     newPlayers[1] = { ...player1, chips: player1.chips + half + (state.firstPlayerIndex === 1 ? remainder : 0) }
 
+    const p0Got = half + (state.firstPlayerIndex === 0 ? remainder : 0)
+    const p1Got = half + (state.firstPlayerIndex === 1 ? remainder : 0)
+
     const roundResult: RoundResult = {
       roundNumber: state.roundNumber,
       player0Card: card0,
@@ -45,6 +48,8 @@ export function resolveShowdown(state: GameState): ActionResult {
       winner: null,
       potWon: state.pot,
       foldedPlayerId: null,
+      player0ChipChange: p0Got - player0.currentBet,
+      player1ChipChange: p1Got - player1.currentBet,
     }
 
     events.push({
@@ -82,6 +87,8 @@ export function resolveShowdown(state: GameState): ActionResult {
     winner: winnerId,
     potWon: state.pot,
     foldedPlayerId: null,
+    player0ChipChange: winnerIndex === 0 ? state.pot - player0.currentBet : -player0.currentBet,
+    player1ChipChange: winnerIndex === 1 ? state.pot - player1.currentBet : -player1.currentBet,
   }
 
   events.push({

@@ -15,11 +15,9 @@ export interface Player {
   name: string
   chips: number
   card: Card | null
-  peekCount: number       // 남은 엿보기 횟수
   swapCount: number       // 남은 교체 횟수
   currentBet: number      // 이번 라운드 누적 베팅
   hasFolded: boolean
-  hasPeeked: boolean      // 이번 라운드에 이미 엿봤는지
   hasUsedAbility: boolean // 이번 라운드에 능력 사용 완료했는지
 }
 
@@ -44,16 +42,17 @@ export interface RoundResult {
   roundNumber: number
   player0Card: Card
   player1Card: Card
-  winner: string | null  // playerId, null = 폴드 패배
+  winner: string | null  // playerId, null = 무승부
   potWon: number
   foldedPlayerId: string | null
+  player0ChipChange: number  // player0의 이번 라운드 칩 변화 (+/-)
+  player1ChipChange: number  // player1의 이번 라운드 칩 변화 (+/-)
 }
 
 // ─── 액션 ───
 
 export type GameAction =
   | { type: 'START_ROUND' }
-  | { type: 'PEEK' }
   | { type: 'SWAP' }
   | { type: 'SKIP_ABILITY' }
   | { type: 'RAISE'; amount: number }
@@ -93,9 +92,7 @@ export interface PlayerViewPlayer {
   chips: number
   currentBet: number
   hasFolded: boolean
-  hasPeeked: boolean
   hasUsedAbility: boolean
-  peekCount: number
   swapCount: number
 }
 
@@ -108,7 +105,6 @@ export interface PlayerView {
   currentPlayerIndex: number
   firstPlayerIndex: number
   myIndex: number
-  myCard: Card | null       // 자기 카드: peek 했으면 보임, 아니면 null
   opponentCard: Card | null // 상대 카드: 인디언 포커 핵심 — 항상 보임
   me: PlayerViewPlayer
   opponent: PlayerViewPlayer
@@ -117,6 +113,21 @@ export interface PlayerView {
   roundHistory: RoundResult[]
   deckRemaining: number
 }
+
+// ─── AI 페르소나 정보 (클라이언트용) ───
+
+export interface AIPersonalityInfo {
+  name: string
+  description: string
+}
+
+// ─── AI 표정 (소켓 이벤트에서 사용) ───
+
+export type AIExpression =
+  | 'poker_face' | 'confident' | 'nervous'
+  | 'smirking' | 'surprised' | 'thinking' | 'taunting'
+  | 'laughing' | 'angry' | 'disappointed' | 'pleased'
+  | 'shocked' | 'cold' | 'sweating' | 'mocking'
 
 // ─── Shuffler (테스트용 DI) ───
 
@@ -128,6 +139,7 @@ export interface Shuffler {
 
 export interface ClientEvents {
   'create-game': (data: { player: { id: string; name: string } }) => void
+  'create-ai-game': (data: { player: { id: string; name: string }; personalityName?: string }) => void
   'join-game': (data: { gameId: string; player: { id: string; name: string } }) => void
   'game-action': (data: { action: GameAction }) => void
   'leave-game': () => void
@@ -140,5 +152,6 @@ export interface ServerEvents {
   'action-result': (data: { success: boolean; message: string; events: GameEvent[] }) => void
   'opponent-joined': (data: { opponentName: string }) => void
   'opponent-left': () => void
+  'ai-state': (data: { expression: AIExpression; message: string | null }) => void
   'error': (data: { message: string }) => void
 }

@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { createTestGame, startRoundWithCards, skipAbilityPhase } from './test-helpers'
-import type { Card } from '../types'
-import { INITIAL_CHIPS, ANTE_AMOUNT, MAX_ROUNDS } from '../constants'
+import type { Card } from '../../game'
+import { INITIAL_CHIPS } from '../../game'
 
 describe('Full Game', () => {
-  it('5라운드 완주', () => {
+  it('여러 라운드 진행 (칩 0 전까지 계속)', () => {
     const { engine, state, shuffler } = createTestGame()
     let s = state
 
@@ -31,9 +31,10 @@ describe('Full Game', () => {
       expect(s.phase).toBe('round_end')
     }
 
-    // 5라운드 종료 후
+    // 5라운드 후에도 칩이 남아있으면 게임 계속
     expect(s.roundHistory).toHaveLength(5)
     expect(s.roundNumber).toBe(5)
+    expect(s.phase).toBe('round_end') // 칩이 남아있으므로 종료 아님
   })
 
   it('칩이 0이면 즉시 게임 종료', () => {
@@ -64,39 +65,25 @@ describe('Full Game', () => {
     expect(r2.newState.winner).toBe('player-2')
   })
 
-  it('동률이면 무승부', () => {
+  it('무승부 라운드 시 칩 변동 없이 게임 계속', () => {
     const { engine, state, shuffler } = createTestGame()
     let s = state
 
-    // 5라운드 동안 번갈아 승리하여 칩 동률
-    const rounds: [Card, Card][] = [
-      [5, 5], // 무승부
-      [5, 5], // 무승부
-      [5, 5], // 무승부
-      [5, 5], // 무승부
-      [5, 5], // 무승부
-    ]
+    // 무승부 라운드
+    s = startRoundWithCards(engine, s, shuffler, 5, 5)
+    s = skipAbilityPhase(engine, s)
 
-    for (const [c1, c2] of rounds) {
-      s = startRoundWithCards(engine, s, shuffler, c1, c2)
-      s = skipAbilityPhase(engine, s)
+    const result = engine.executeAction(s, { type: 'CALL' })
+    expect(result.success).toBe(true)
+    s = result.newState
 
-      const result = engine.executeAction(s, { type: 'CALL' })
-      expect(result.success).toBe(true)
-      s = result.newState
+    // 무승부 → 칩은 앤티만큼만 변동, 게임 계속
+    expect(s.phase).toBe('round_end')
+    expect(s.roundHistory[0].winner).toBeNull()
 
-      if (s.phase === 'game_over') break
-    }
-
-    // 마지막 라운드 종료 후 START_ROUND → game_over
-    if (s.phase === 'round_end') {
-      const endResult = engine.executeAction(s, { type: 'START_ROUND' })
-      s = endResult.newState
-    }
-
-    expect(s.phase).toBe('game_over')
-    expect(s.isDraw).toBe(true)
-    expect(s.winner).toBeNull()
+    // 다음 라운드 시작 가능
+    s = startRoundWithCards(engine, s, shuffler, 7, 3)
+    expect(s.phase).toBe('ability')
   })
 
   it('선 플레이어가 매 라운드 교체됨', () => {
@@ -160,8 +147,8 @@ describe('Full Game', () => {
     const { engine, state, shuffler } = createTestGame()
     let s = startRoundWithCards(engine, state, shuffler, 8, 2)
 
-    // 선 플레이어 peek
-    const r1 = engine.executeAction(s, { type: 'PEEK' })
+    // 선 플레이어 swap
+    const r1 = engine.executeAction(s, { type: 'SWAP' })
     expect(r1.success).toBe(true)
 
     // 상대 skip

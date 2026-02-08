@@ -2,7 +2,6 @@ import type { Card } from './types'
 
 export const INITIAL_CHIPS = 20
 export const ANTE_AMOUNT = 1
-export const INITIAL_PEEK_COUNT = 3
 export const INITIAL_SWAP_COUNT = 3
 export const MAX_ROUNDS = 5
 export const MIN_RAISE_AMOUNT = 1

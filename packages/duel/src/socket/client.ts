@@ -1,5 +1,5 @@
 import { io, type Socket } from 'socket.io-client'
-import type { ClientEvents, ServerEvents } from '@duel/core'
+import type { ClientEvents, ServerEvents } from '@duel/server/game'
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3002'
 

@@ -1,32 +1,50 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGameStore } from '../store/gameStore'
+import { AI_PERSONALITIES } from '@duel/server/game'
 
 export default function HomePage() {
   const navigate = useNavigate()
-  const { connect, createGame, joinGame, gameId, isConnected, error, setError } = useGameStore()
+  const { connect, createGame, createAIGame, joinGame, gameId, isConnected, error, setError, isAIGame, opponentName } = useGameStore()
 
-  const [name, setName] = useState('')
+  const [name, setName] = useState(() => localStorage.getItem('duel-player-name') ?? '')
   const [joinCode, setJoinCode] = useState('')
-  const [mode, setMode] = useState<'menu' | 'create' | 'join'>('menu')
+  const [mode, setMode] = useState<'menu' | 'create' | 'join' | 'ai'>('menu')
+  const [selectedPersonality, setSelectedPersonality] = useState<string | null>(null)
 
   useEffect(() => {
     connect()
   }, [connect])
 
-  // gameId가 설정되면 로비로 이동
+  // gameId가 설정되면 로비로 이동 (AI 게임은 바로 게임 페이지로)
   useEffect(() => {
-    if (gameId) {
+    if (gameId && isAIGame && opponentName) {
+      navigate(`/game/${gameId}`)
+    } else if (gameId && !isAIGame) {
       navigate(`/lobby/${gameId}`)
     }
-  }, [gameId, navigate])
+  }, [gameId, isAIGame, opponentName, navigate])
+
+  const saveName = (n: string) => {
+    localStorage.setItem('duel-player-name', n)
+  }
 
   const handleCreate = () => {
     if (!name.trim()) {
       setError('이름을 입력해주세요.')
       return
     }
+    saveName(name.trim())
     createGame(name.trim())
+  }
+
+  const handleAIGame = () => {
+    if (!name.trim()) {
+      setError('이름을 입력해주세요.')
+      return
+    }
+    saveName(name.trim())
+    createAIGame(name.trim(), selectedPersonality ?? undefined)
   }
 
   const handleJoin = () => {
@@ -38,6 +56,7 @@ export default function HomePage() {
       setError('게임 코드를 입력해주세요.')
       return
     }
+    saveName(name.trim())
     joinGame(joinCode.trim().toUpperCase(), name.trim())
   }
 
@@ -70,6 +89,13 @@ export default function HomePage() {
         {mode === 'menu' && (
           <div className="flex flex-col gap-3">
             <button
+              onClick={() => setMode('ai')}
+              disabled={!isConnected}
+              className="w-full px-6 py-4 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 text-white font-semibold rounded-xl text-lg transition-colors"
+            >
+              AI 대전
+            </button>
+            <button
               onClick={() => setMode('create')}
               disabled={!isConnected}
               className="w-full px-6 py-4 bg-duel-accent hover:bg-indigo-500 disabled:bg-slate-700 text-white font-semibold rounded-xl text-lg transition-colors"
@@ -82,6 +108,66 @@ export default function HomePage() {
               className="w-full px-6 py-4 bg-duel-surface hover:bg-slate-600 disabled:bg-slate-700 text-white font-semibold rounded-xl text-lg transition-colors border border-duel-border"
             >
               방 참가하기
+            </button>
+          </div>
+        )}
+
+        {mode === 'ai' && (
+          <div className="flex flex-col gap-3">
+            <input
+              type="text"
+              placeholder="이름 입력"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              maxLength={10}
+              className="w-full px-4 py-3 bg-duel-surface border border-duel-border rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+              autoFocus
+            />
+
+            {/* 페르소나 선택 */}
+            <div className="mt-1">
+              <p className="text-sm text-slate-400 mb-2">AI 상대 선택</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setSelectedPersonality(null)}
+                  className={`px-3 py-2 rounded-lg border text-left transition-colors ${
+                    selectedPersonality === null
+                      ? 'border-amber-500 bg-amber-500/20 text-amber-300'
+                      : 'border-duel-border bg-duel-surface text-slate-400 hover:border-slate-500'
+                  }`}
+                >
+                  <div className="font-semibold text-sm">랜덤</div>
+                  <div className="text-xs mt-0.5 opacity-70">무작위 AI 상대</div>
+                </button>
+                {AI_PERSONALITIES.map(p => (
+                  <button
+                    key={p.name}
+                    onClick={() => setSelectedPersonality(p.name)}
+                    className={`px-3 py-2 rounded-lg border text-left transition-colors ${
+                      selectedPersonality === p.name
+                        ? 'border-amber-500 bg-amber-500/20 text-amber-300'
+                        : 'border-duel-border bg-duel-surface text-slate-400 hover:border-slate-500'
+                    }`}
+                  >
+                    <div className="font-semibold text-sm">{p.name}</div>
+                    <div className="text-xs mt-0.5 opacity-70">{p.description}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={handleAIGame}
+              disabled={!isConnected}
+              className="w-full px-6 py-3 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 text-white font-semibold rounded-lg transition-colors"
+            >
+              AI와 대결 시작
+            </button>
+            <button
+              onClick={() => setMode('menu')}
+              className="text-slate-400 hover:text-white text-sm"
+            >
+              뒤로가기
             </button>
           </div>
         )}
@@ -154,8 +240,8 @@ export default function HomePage() {
           <ul className="text-sm text-slate-400 space-y-1">
             <li>- 상대 카드는 보이고, 내 카드는 안 보임</li>
             <li>- 카드: 1~10 (높은 숫자가 승리)</li>
-            <li>- 칩 20개로 시작, 5라운드</li>
-            <li>- 엿보기/교체 능력 각 3회</li>
+            <li>- 칩 20개로 시작, 상대 칩을 모두 뺏으면 승리</li>
+            <li>- 교체 능력 3회</li>
             <li>- 베팅으로 블러프를 걸어보세요!</li>
           </ul>
         </div>

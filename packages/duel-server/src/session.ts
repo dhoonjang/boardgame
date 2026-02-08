@@ -1,4 +1,4 @@
-import { GameEngine, type GameState } from '@duel/core'
+import { GameEngine, type GameState } from './game'
 
 export interface GameRoom {
   gameState: GameState
@@ -18,6 +18,7 @@ export class SessionManager {
   private games: Map<string, GameRoom> = new Map()
   private engine: GameEngine
   private socketToGame: Map<string, string> = new Map()  // socketId → gameId
+  private aiGames: Set<string> = new Set()  // AI 게임인 gameId
 
   constructor() {
     this.engine = new GameEngine()
@@ -124,6 +125,19 @@ export class SessionManager {
       })
     }
     return summaries
+  }
+
+  isAIGame(gameId: string): boolean {
+    return this.aiGames.has(gameId)
+  }
+
+  markAsAIGame(gameId: string): void {
+    this.aiGames.add(gameId)
+  }
+
+  removeGame(gameId: string): void {
+    this.games.delete(gameId)
+    this.aiGames.delete(gameId)
   }
 
   getEngine(): GameEngine {

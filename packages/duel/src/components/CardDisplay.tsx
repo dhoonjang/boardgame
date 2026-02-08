@@ -1,4 +1,4 @@
-import type { Card } from '@duel/core'
+import type { Card } from '@duel/server/game'
 
 function getCardColor(value: Card): string {
   if (value <= 3) return 'from-red-500 to-red-700'

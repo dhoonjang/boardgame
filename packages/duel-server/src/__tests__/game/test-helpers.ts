@@ -1,5 +1,5 @@
-import type { Shuffler, Card, GameState } from '../types'
-import { GameEngine } from '../engine/game-engine'
+import type { Shuffler, Card, GameState } from '../../game'
+import { GameEngine } from '../../game'
 
 /**
  * 테스트용 MockShuffler: 카드 순서를 제어

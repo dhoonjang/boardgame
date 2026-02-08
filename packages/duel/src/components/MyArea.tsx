@@ -1,32 +1,21 @@
-import type { PlayerViewPlayer, Card } from '@duel/core'
-import CardDisplay from './CardDisplay'
+import type { PlayerViewPlayer } from '@duel/server/game'
 import HiddenCard from './HiddenCard'
 import ChipStack from './ChipStack'
 
 interface Props {
   me: PlayerViewPlayer
-  myCard: Card | null
-  hasPeeked: boolean
 }
 
-export default function MyArea({ me, myCard, hasPeeked }: Props) {
+export default function MyArea({ me }: Props) {
   return (
     <div className="flex flex-col items-center gap-3 p-4 bg-duel-surface rounded-xl border border-duel-accent/30">
       <div className="flex items-center gap-2">
         <span className="text-lg font-semibold text-duel-accent">{me.name} (나)</span>
       </div>
 
-      {/* 내 카드: peek 했으면 보임, 아니면 숨김 */}
+      {/* 내 카드: 항상 숨김 (순수 인디언 포커) */}
       <div className="relative">
-        {myCard ? (
-          <CardDisplay value={myCard} />
-        ) : hasPeeked ? (
-          <div className="w-28 h-40 bg-slate-700 rounded-xl flex items-center justify-center text-slate-500">
-            대기 중
-          </div>
-        ) : (
-          <HiddenCard />
-        )}
+        <HiddenCard />
         <div className="absolute -top-2 -right-2 bg-duel-accent text-white text-xs px-2 py-0.5 rounded-full font-semibold">
           내 카드
         </div>
@@ -41,7 +30,6 @@ export default function MyArea({ me, myCard, hasPeeked }: Props) {
       </div>
 
       <div className="flex gap-3 text-xs text-slate-400">
-        <span>엿보기: {me.peekCount}회</span>
         <span>교체: {me.swapCount}회</span>
       </div>
     </div>

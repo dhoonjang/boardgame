@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { ValidAction, GameAction } from '@duel/core'
+import type { ValidAction, GameAction } from '@duel/server/game'
 
 interface Props {
   validActions: ValidAction[]

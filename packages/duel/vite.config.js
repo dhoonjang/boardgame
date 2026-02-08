@@ -6,11 +6,11 @@ export default defineConfig({
     resolve: {
         alias: {
             '@': path.resolve(__dirname, './src'),
-            '@duel/core': path.resolve(__dirname, '../duel-core/src/index.ts'),
+            '@duel/server/game': path.resolve(__dirname, '../duel-server/src/game/index.ts'),
         },
     },
     optimizeDeps: {
-        exclude: ['@duel/core'],
+        exclude: ['@duel/server'],
     },
     build: {
         outDir: 'dist',

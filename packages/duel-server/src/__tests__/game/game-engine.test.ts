@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { GameEngine } from '../engine/game-engine'
+import { GameEngine } from '../../game'
 import { createTestGame, startRoundWithCards, skipAbilityPhase } from './test-helpers'
-import { INITIAL_CHIPS, ANTE_AMOUNT } from '../constants'
+import { INITIAL_CHIPS, ANTE_AMOUNT } from '../../game'
 
 describe('GameEngine', () => {
   describe('createGame', () => {
@@ -82,16 +82,14 @@ describe('GameEngine', () => {
   })
 
   describe('getPlayerView', () => {
-    it('내 카드는 peek 전에는 숨김', () => {
+    it('상대 카드는 보임', () => {
       const { engine, state, shuffler } = createTestGame()
       const s = startRoundWithCards(engine, state, shuffler, 7, 3)
 
       const view1 = engine.getPlayerView(s, 'player-1')
-      expect(view1.myCard).toBeNull()    // peek 안 함 → 안 보임
       expect(view1.opponentCard).toBe(3) // 상대 카드는 보임
 
       const view2 = engine.getPlayerView(s, 'player-2')
-      expect(view2.myCard).toBeNull()    // peek 안 함 → 안 보임
       expect(view2.opponentCard).toBe(7) // 상대 카드는 보임
     })
   })
@@ -104,9 +102,9 @@ describe('GameEngine', () => {
       const actions = engine.getValidActions(s, 'player-1')
       const types = actions.map(a => a.type)
 
-      expect(types).toContain('PEEK')
       expect(types).toContain('SWAP')
       expect(types).toContain('SKIP_ABILITY')
+      expect(types).not.toContain('PEEK')
     })
 
     it('자기 차례가 아니면 빈 배열', () => {

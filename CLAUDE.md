@@ -22,27 +22,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 boardgame/
 ├── packages/
 │   ├── <game>/           # 게임별 웹 UI
-│   ├── <game>-core/      # 게임별 로직 라이브러리 (순수 TypeScript)
-│   └── <game>-server/    # 게임별 HTTP API 서버 (선택)
+│   ├── <game>-core/      # 게임별 로직 라이브러리 (순수 TypeScript) — 선택
+│   └── <game>-server/    # 게임별 서버 (게임 로직 포함 가능)
 ├── pnpm-workspace.yaml
 └── turbo.json
 ```
 
 ### 현재 게임
-- **forgod**: For God - 신과 마왕 사이에서 운명을 선택하는 3~6인용 전략 보드게임
-- **duel**: Bluff Duel - 인디언 포커 스타일 2인 블러프 카드 게임 (Socket.IO 실시간 통신)
+- **forgod**: For God - 신과 마왕 사이에서 운명을 선택하는 3~6인용 전략 보드게임 (core + server + UI)
+- **duel**: Bluff Duel - 인디언 포커 스타일 2인 블러프 카드 게임 (server + UI, 게임 로직은 server 내부)
 
 ## 패키지 구조 패턴
 
-각 게임은 2~3개 패키지로 구성:
+게임별로 구조가 다를 수 있음:
 
+**forgod** (core 분리형):
 | 패키지 | 역할 | 기술 스택 |
 |--------|------|-----------|
-| `<game>` | 웹 UI | Vite + React + React Router + Zustand + Tailwind |
-| `<game>-core` | 게임 로직 | 순수 TypeScript, tsup 빌드, Vitest 테스트 |
-| `<game>-server` | HTTP API 서버 (선택) | Hono + @hono/node-server + Zod |
+| `forgod` | 웹 UI | Vite + React + React Router + Zustand + Tailwind |
+| `forgod-core` | 게임 로직 | 순수 TypeScript, tsup 빌드, Vitest 테스트 |
+| `forgod-server` | HTTP API 서버 | Hono + @hono/node-server + Zod |
 
-패키지 의존성: `<game>` → `<game>-core` ← `<game>-server`
+**duel** (서버 통합형):
+| 패키지 | 역할 | 기술 스택 |
+|--------|------|-----------|
+| `duel` | 웹 UI | Vite + React + Zustand + Tailwind |
+| `duel-server` | 서버 + 게임 로직 | Socket.IO + Hono + Zod, 게임 로직은 `src/game/` |
+
+duel 의존성: `duel` → `@duel/server/game` (타입만, vite alias로 소스 직접 참조)
 
 ## 공통 명령어
 
@@ -91,18 +98,18 @@ pnpm duel:dev            # duel 개발 서버 (Vite HMR)
 pnpm duel:server:dev     # duel Socket.IO 서버 개발 모드 (watch)
 
 # 빌드
-pnpm duel:build          # 전체 빌드 (core → duel 순서)
+pnpm duel:build          # 전체 빌드 (server → duel 순서)
 
 # 테스트
-pnpm duel:test           # duel-core + duel-server 테스트
+pnpm duel:test           # duel-server 테스트 (게임 로직 + 서버)
 
 # 서버
 pnpm duel:server         # duel 서버 시작 (포트 3002)
 
 # 개별 패키지
 pnpm --filter duel dev
-pnpm --filter @duel/core build
-pnpm --filter @duel/core test
+pnpm --filter @duel/server build
+pnpm --filter @duel/server test
 pnpm --filter @duel/server start
 ```
 
