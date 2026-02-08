@@ -11,6 +11,18 @@ export interface RevelationResult {
 }
 
 /**
+ * 이벤트 기반 계시 자동 완료 컨텍스트
+ * 전투/행동 후 자동으로 계시 조건 체크에 사용
+ */
+export interface RevelationContext {
+  attackerId?: string    // 공격자 ID
+  targetId?: string      // 대상 ID
+  targetDied?: boolean   // 대상 사망 여부
+  targetIsMonster?: boolean  // 대상이 몬스터인지
+  targetMonsterId?: string   // 대상 몬스터 ID
+}
+
+/**
  * 계시 카드 뽑기
  */
 export function drawRevelation(
@@ -289,4 +301,176 @@ function applyRevelationReward(
  */
 export function createRevelationDeck(): Revelation[] {
   return [...REVELATIONS]
+}
+
+/**
+ * angel-7 (천사의 가호) 체크: 타락 용사에게 죽을만큼 피해를 받을 때
+ * 체력 1로 생존 + 계시 자동 완료
+ * @returns 생존 여부 및 새 상태
+ */
+export function checkAngel7Protection(
+  state: GameState,
+  targetPlayerId: string,
+  attackerPlayerId: string,
+  damage: number
+): { protected: boolean; newState: GameState; events: GameEvent[] } {
+  const target = state.players.find(p => p.id === targetPlayerId)
+  const attacker = state.players.find(p => p.id === attackerPlayerId)
+
+  if (!target || !attacker) {
+    return { protected: false, newState: state, events: [] }
+  }
+
+  // 조건: 대상이 angel-7을 보유, 공격자가 타락 상태, 피해가 치명적
+  if (attacker.state !== 'corrupt') {
+    return { protected: false, newState: state, events: [] }
+  }
+
+  const angel7 = target.revelations.find(r => r.id === 'angel-7')
+  if (!angel7) {
+    return { protected: false, newState: state, events: [] }
+  }
+
+  // 피해가 치명적인지 (현재 체력 이상)
+  if (target.health > damage) {
+    return { protected: false, newState: state, events: [] }
+  }
+
+  // 천사의 가호 발동: 체력 1로 생존
+  const events: GameEvent[] = []
+  let newState = state
+
+  // 체력 1로 생존
+  newState = {
+    ...newState,
+    players: newState.players.map(p =>
+      p.id === targetPlayerId ? { ...p, health: 1 } : p
+    ),
+  }
+
+  // 계시 자동 완료 (보상 적용)
+  newState = applyRevelationReward(newState, targetPlayerId, angel7)
+  newState = {
+    ...newState,
+    players: newState.players.map(p =>
+      p.id === targetPlayerId
+        ? {
+            ...p,
+            revelations: p.revelations.filter(r => r.id !== 'angel-7'),
+            completedRevelations: [...p.completedRevelations, angel7],
+          }
+        : p
+    ),
+  }
+
+  events.push({
+    type: 'REVELATION_COMPLETED',
+    playerId: targetPlayerId,
+    revelationId: 'angel-7',
+  })
+
+  return { protected: true, newState, events }
+}
+
+/**
+ * 이벤트 기반 계시 자동 완료 처리
+ * 전투 직후 조건이 충족되는 계시를 자동으로 완료합니다.
+ */
+export function processEventRevelations(
+  state: GameState,
+  context: RevelationContext
+): { newState: GameState; events: GameEvent[] } {
+  const events: GameEvent[] = []
+  let newState = state
+
+  if (!context.attackerId) return { newState, events }
+
+  const attacker = newState.players.find(p => p.id === context.attackerId)
+  if (!attacker) return { newState, events }
+
+  // 공격자가 보유한 계시 중 이벤트 기반 조건 체크
+  for (const revelation of [...attacker.revelations]) {
+    let shouldComplete = false
+
+    switch (revelation.id) {
+      case 'angel-5':
+        // 발록 공격: 발록을 공격했는지
+        if (context.targetIsMonster && context.targetMonsterId === 'balrog') {
+          shouldComplete = true
+        }
+        break
+
+      case 'angel-6':
+        // 발록 처단: 신성 상태로 발록을 죽여라
+        if (context.targetIsMonster && context.targetMonsterId === 'balrog' && context.targetDied && attacker.state === 'holy') {
+          shouldComplete = true
+        }
+        break
+
+      case 'demon-4':
+        // 선제 공격: 신성 상태로 용사 공격
+        if (!context.targetIsMonster && attacker.state === 'holy') {
+          shouldComplete = true
+        }
+        break
+
+      case 'demon-6':
+        // 마을 습격: 마을 타일에 있는 용사 공격
+        if (!context.targetIsMonster && context.targetId) {
+          const targetPlayer = newState.players.find(p => p.id === context.targetId)
+          if (targetPlayer) {
+            const board = deserializeBoard(newState.board)
+            const targetTile = getTile(board, targetPlayer.position)
+            if (targetTile?.type === 'village') {
+              shouldComplete = true
+            }
+          }
+        }
+        break
+
+      case 'demon-8':
+        // 타락 유혹: 신성 상태로 용사 처치
+        if (!context.targetIsMonster && context.targetDied && attacker.state === 'holy') {
+          shouldComplete = true
+        }
+        break
+    }
+
+    if (shouldComplete) {
+      // 보상 적용
+      newState = applyRevelationReward(newState, attacker.id, revelation)
+      // 완료 처리
+      newState = {
+        ...newState,
+        players: newState.players.map(p =>
+          p.id === attacker.id
+            ? {
+                ...p,
+                revelations: p.revelations.filter(r => r.id !== revelation.id),
+                completedRevelations: [...p.completedRevelations, revelation],
+              }
+            : p
+        ),
+      }
+      events.push({
+        type: 'REVELATION_COMPLETED',
+        playerId: attacker.id,
+        revelationId: revelation.id,
+      })
+
+      // 게임 종료 계시 체크
+      if (revelation.isGameEnd) {
+        events.push({
+          type: 'GAME_OVER',
+          winnerId: attacker.id,
+        })
+      }
+
+      // 공격자 상태 업데이트 (다음 반복을 위해)
+      const updatedAttacker = newState.players.find(p => p.id === context.attackerId)
+      if (!updatedAttacker) break
+    }
+  }
+
+  return { newState, events }
 }

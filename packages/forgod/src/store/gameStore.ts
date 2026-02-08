@@ -1,171 +1,247 @@
-import type { GameAction, HeroClass, HexCoord, TileType } from '@forgod/core'
 import { create } from 'zustand'
-import api, { ValidActionsResponse } from '../api/client'
+import type { GameState, GameAction, GameEvent, ValidAction, HeroClass, HexCoord } from '@forgod/core'
+import { createAdapter, type AdapterMode, type GameAdapter } from '../adapters'
 
-interface PlayerState {
-  id: string
-  name: string
-  heroClass: HeroClass
-  state: 'holy' | 'corrupt'
-  health: number
-  maxHealth: number
-  position: HexCoord
-  isDead: boolean
-}
+export type InteractionMode =
+  | 'none'
+  | 'move'           // Tile click = MOVE
+  | 'attack'         // Token click = BASIC_ATTACK
+  | 'skill_target'   // Token click = USE_SKILL with targetId
+  | 'skill_position' // Tile click = USE_SKILL with position
+  | 'escape_tile'    // Tile click = CHOOSE_ESCAPE_TILE
 
-interface MonsterState {
-  id: string
-  name: string
-  position: HexCoord
-  health: number
-  maxHealth: number
-  isDead: boolean
-}
-
-interface HexTileState {
-  coord: HexCoord
-  type: TileType
-  monsterId?: string
-  villageClass?: HeroClass
+export interface UIGameEvent {
+  id: number
+  event: GameEvent
+  timestamp: number
 }
 
 interface GameStore {
-  // 상태
+  // Adapter
+  adapter: GameAdapter
+  adapterMode: AdapterMode
+  setAdapterMode: (mode: AdapterMode) => void
+
+  // Core state
   gameId: string | null
-  playerId: string | null  // 현재 사용자의 플레이어 ID
+  gameState: GameState | null
+  validActions: ValidAction[]
   isLoading: boolean
   error: string | null
 
-  // 게임 데이터
-  roundNumber: number
-  currentPhase: string
-  currentPlayerId: string | null
-  players: PlayerState[]
-  monsters: MonsterState[]
-  board: HexTileState[]
-  validActions: ValidActionsResponse['validActions']
+  // Interaction state
+  interactionMode: InteractionMode
+  highlightedTiles: HexCoord[]
+  selectedSkillId: string | null
+  pendingActionPlayerId: string | null
 
-  // 액션
-  createGame: (players: Array<{ id: string; name: string; heroClass: HeroClass }>, myPlayerId: string) => Promise<void>
-  loadGame: (gameId: string, playerId: string) => Promise<void>
-  refreshGameState: () => Promise<void>
+  // Event log
+  eventLog: UIGameEvent[]
+  eventCounter: number
+
+  // Derived helpers
+  currentPlayerId: () => string | null
+  currentPlayer: () => GameState['players'][0] | null
+  isMonsterTurn: () => boolean
+
+  // Actions
+  createGame: (players: Array<{ id: string; name: string; heroClass: HeroClass }>) => Promise<string>
+  loadGame: (gameId: string) => Promise<void>
   executeAction: (action: GameAction) => Promise<void>
+  executeMovePath: (path: HexCoord[]) => Promise<void>
+  refreshState: () => Promise<void>
   resetGame: () => void
+
+  // Interaction
+  setInteraction: (mode: InteractionMode, tiles?: HexCoord[], skillId?: string | null) => void
+  clearInteraction: () => void
+
+  // Event log
+  pushEvents: (events: GameEvent[]) => void
+  clearEventLog: () => void
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
-  // 초기 상태
+  adapter: createAdapter('local'),
+  adapterMode: 'local',
+  setAdapterMode: (mode) => set({ adapter: createAdapter(mode), adapterMode: mode }),
+
   gameId: null,
-  playerId: null,
+  gameState: null,
+  validActions: [],
   isLoading: false,
   error: null,
-  roundNumber: 0,
-  currentPhase: '',
-  currentPlayerId: null,
-  players: [],
-  monsters: [],
-  board: [],
-  validActions: [],
 
-  // 게임 생성
-  createGame: async (players, myPlayerId) => {
-    set({ isLoading: true, error: null })
+  interactionMode: 'none',
+  highlightedTiles: [],
+  selectedSkillId: null,
+  pendingActionPlayerId: null,
 
-    try {
-      const result = await api.createGame({ players })
+  eventLog: [],
+  eventCounter: 0,
 
-      if (!result.success || !result.gameId) {
-        throw new Error(result.error || '게임 생성 실패')
-      }
-
-      set({ gameId: result.gameId, playerId: myPlayerId })
-
-      // 게임 상태 로드
-      await get().loadGame(result.gameId, myPlayerId)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '알 수 없는 오류'
-      set({ error: message, isLoading: false })
-    }
+  // Derived
+  currentPlayerId: () => {
+    const { gameState } = get()
+    if (!gameState) return null
+    const entry = gameState.roundTurnOrder[gameState.currentTurnIndex]
+    return entry === 'monster' ? null : entry
   },
 
-  // 게임 로드
-  loadGame: async (gameId, playerId) => {
+  currentPlayer: () => {
+    const { gameState } = get()
+    const pid = get().currentPlayerId()
+    if (!gameState || !pid) return null
+    return gameState.players.find(p => p.id === pid) ?? null
+  },
+
+  isMonsterTurn: () => {
+    const { gameState } = get()
+    if (!gameState) return false
+    return gameState.roundTurnOrder[gameState.currentTurnIndex] === 'monster'
+  },
+
+  createGame: async (players) => {
     set({ isLoading: true, error: null })
-
     try {
-      const [stateResult, actionsResult] = await Promise.all([
-        api.getGameState(gameId, playerId),
-        api.getValidActions(gameId, playerId),  // playerId는 선택적 쿼리 파라미터
-      ])
-
-      if (!stateResult.success || !stateResult.gameState) {
-        throw new Error(stateResult.error || '게임을 찾을 수 없습니다')
-      }
-
-      const { gameState } = stateResult
-
+      const { gameId, state } = await get().adapter.createGame({ players })
+      const validActions = await get().adapter.getValidActions(gameId)
       set({
         gameId,
-        playerId,
-        roundNumber: gameState.roundNumber,
-        currentPhase: gameState.roundPhase,
-        currentPlayerId: gameState.currentTurnPlayer.id,
-        players: gameState.players,
-        monsters: gameState.monsters,
-        board: gameState.board,
-        validActions: actionsResult.validActions || [],
+        gameState: state,
+        validActions,
         isLoading: false,
+        eventLog: [],
+        eventCounter: 0,
       })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '알 수 없는 오류'
-      set({ error: message, isLoading: false })
+      return gameId
+    } catch (e) {
+      set({ error: (e as Error).message, isLoading: false })
+      throw e
     }
   },
 
-  // 게임 상태 새로고침
-  refreshGameState: async () => {
-    const { gameId, playerId } = get()
-    if (!gameId || !playerId) return
-
-    await get().loadGame(gameId, playerId)
-  },
-
-  // 액션 실행
-  executeAction: async (action) => {
-    const { gameId, playerId } = get()
-    if (!gameId) return
-
+  loadGame: async (gameId) => {
     set({ isLoading: true, error: null })
-
     try {
-      const result = await api.executeAction(gameId, action, playerId || undefined)
-
-      if (!result.success) {
-        throw new Error(result.error || '액션 실행 실패')
-      }
-
-      // 게임 상태 새로고침
-      await get().refreshGameState()
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '알 수 없는 오류'
-      set({ error: message, isLoading: false })
+      const [state, validActions] = await Promise.all([
+        get().adapter.getGameState(gameId),
+        get().adapter.getValidActions(gameId),
+      ])
+      set({ gameId, gameState: state, validActions, isLoading: false })
+    } catch (e) {
+      set({ error: (e as Error).message, isLoading: false })
     }
   },
 
-  // 게임 리셋
-  resetGame: () => {
+  executeAction: async (action) => {
+    const { gameId, adapter } = get()
+    if (!gameId) return
+    set({ isLoading: true, error: null })
+    try {
+      const result = await adapter.executeAction(gameId, action)
+      if (!result.success) {
+        set({ error: result.message, isLoading: false })
+        return
+      }
+      get().pushEvents(result.events)
+      const validActions = await adapter.getValidActions(gameId)
+      set({
+        gameState: result.newState,
+        validActions,
+        isLoading: false,
+        interactionMode: 'none',
+        highlightedTiles: [],
+        selectedSkillId: null,
+      })
+    } catch (e) {
+      set({ error: (e as Error).message, isLoading: false })
+    }
+  },
+
+  executeMovePath: async (path) => {
+    const { gameId, adapter } = get()
+    if (!gameId || path.length === 0) return
+    set({ isLoading: true, error: null, interactionMode: 'none', highlightedTiles: [], selectedSkillId: null })
+    try {
+      const allEvents: GameEvent[] = []
+      let lastState: GameState | null = null
+      for (const step of path) {
+        const result = await adapter.executeAction(gameId, { type: 'MOVE', position: step })
+        if (!result.success) break
+        allEvents.push(...result.events)
+        lastState = result.newState
+        // 플레이어가 죽었으면 이동 중단
+        const pid = get().currentPlayerId()
+        if (lastState && pid) {
+          const p = lastState.players.find(pl => pl.id === pid)
+          if (p?.isDead) break
+        }
+      }
+      if (allEvents.length > 0) get().pushEvents(allEvents)
+      if (lastState) {
+        const validActions = await adapter.getValidActions(gameId)
+        set({ gameState: lastState, validActions, isLoading: false })
+      } else {
+        set({ isLoading: false })
+      }
+    } catch (e) {
+      set({ error: (e as Error).message, isLoading: false })
+    }
+  },
+
+  refreshState: async () => {
+    const { gameId, adapter } = get()
+    if (!gameId) return
+    try {
+      const [state, validActions] = await Promise.all([
+        adapter.getGameState(gameId),
+        adapter.getValidActions(gameId),
+      ])
+      set({ gameState: state, validActions })
+    } catch (e) {
+      set({ error: (e as Error).message })
+    }
+  },
+
+  resetGame: () => set({
+    gameId: null,
+    gameState: null,
+    validActions: [],
+    isLoading: false,
+    error: null,
+    interactionMode: 'none',
+    highlightedTiles: [],
+    selectedSkillId: null,
+    eventLog: [],
+    eventCounter: 0,
+  }),
+
+  setInteraction: (mode, tiles = [], skillId = null) => set({
+    interactionMode: mode,
+    highlightedTiles: tiles,
+    selectedSkillId: skillId,
+  }),
+
+  clearInteraction: () => set({
+    interactionMode: 'none',
+    highlightedTiles: [],
+    selectedSkillId: null,
+  }),
+
+  pushEvents: (events) => {
+    const { eventLog, eventCounter } = get()
+    const now = Date.now()
+    const newEntries = events.map((event, i) => ({
+      id: eventCounter + i + 1,
+      event,
+      timestamp: now,
+    }))
     set({
-      gameId: null,
-      playerId: null,
-      isLoading: false,
-      error: null,
-      roundNumber: 0,
-      currentPhase: '',
-      currentPlayerId: null,
-      players: [],
-      monsters: [],
-      board: [],
-      validActions: [],
+      eventLog: [...eventLog, ...newEntries].slice(-100),
+      eventCounter: eventCounter + events.length,
     })
   },
+
+  clearEventLog: () => set({ eventLog: [], eventCounter: 0 }),
 }))

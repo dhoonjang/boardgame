@@ -39,8 +39,10 @@ export {
   checkRevelationCondition,
   completeRevelation,
   createRevelationDeck,
+  checkAngel7Protection,
+  processEventRevelations,
 } from './engine/revelations'
-export type { RevelationResult } from './engine/revelations'
+export type { RevelationResult, RevelationContext } from './engine/revelations'
 
 // Victory
 export {

@@ -98,6 +98,9 @@ export interface Player {
   hasUsedBasicAttack: boolean      // 이번 턴 기본공격 사용 여부
 }
 
+// 스킬 대상 지정 유형
+export type SkillTargetType = 'none' | 'entity' | 'position'
+
 // 스킬
 export interface Skill {
   id: string
@@ -106,6 +109,7 @@ export interface Skill {
   cost: number
   cooldown: number
   heroClass: HeroClass
+  targetType: SkillTargetType
 }
 
 // 계시 카드 보상
@@ -215,6 +219,7 @@ export type GameEvent =
   | { type: 'MONSTER_DIED'; monsterId: string }
   | { type: 'REVELATION_COMPLETED'; playerId: string; revelationId: string }
   | { type: 'STAT_UPGRADED'; playerId: string; stat: keyof Stats; newValue: number }
+  | { type: 'MOVE_DICE_ROLLED'; playerId: string; dice1: number; dice2: number; dexBonus: number; total: number }
   | { type: 'GAME_OVER'; winnerId: string }
 
 // 유효한 액션

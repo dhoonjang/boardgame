@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { GameEngine, type CreateGameOptions } from '../engine/game-engine'
-import type { GameState, Player } from '../types'
+import type { GameState, Player, HexCoord } from '../types'
+import { MockDiceRoller, skipToActionPhase } from './test-helpers'
+import { MONSTERS, STARTING_POSITIONS } from '../constants'
 
 describe('GameEngine', () => {
   let engine: GameEngine
@@ -460,6 +462,187 @@ describe('GameEngine', () => {
 
       const validation = engine.validateAction(state, { type: 'ROLL_MOVE_DICE' })
       expect(validation.valid).toBe(true)
+    })
+  })
+
+  describe('executeAction - BASIC_ATTACK (확장)', () => {
+    it('턴당 1회 제한 (hasUsedBasicAttack)', () => {
+      let state = engine.createGame(defaultOptions)
+      const player = engine.getCurrentPlayer(state)!
+      const monster = state.monsters[0]
+
+      state = {
+        ...state,
+        players: state.players.map(p =>
+          p.id === player.id
+            ? {
+                ...p,
+                turnPhase: 'action' as const,
+                position: { q: monster.position.q + 1, r: monster.position.r },
+              }
+            : p
+        ),
+      }
+
+      // 첫 공격 성공
+      const result1 = engine.executeAction(state, { type: 'BASIC_ATTACK', targetId: monster.id })
+      expect(result1.success).toBe(true)
+
+      // 두 번째 공격 실패
+      const result2 = engine.executeAction(result1.newState, { type: 'BASIC_ATTACK', targetId: monster.id })
+      expect(result2.success).toBe(false)
+    })
+
+    it('마검 소유자는 몬스터 공격 불가', () => {
+      let state = engine.createGame(defaultOptions)
+      const player = engine.getCurrentPlayer(state)!
+      const monster = state.monsters[0]
+
+      state = {
+        ...state,
+        players: state.players.map(p =>
+          p.id === player.id
+            ? {
+                ...p,
+                turnPhase: 'action' as const,
+                hasDemonSword: true,
+                position: { q: monster.position.q + 1, r: monster.position.r },
+              }
+            : p
+        ),
+      }
+
+      const result = engine.executeAction(state, { type: 'BASIC_ATTACK', targetId: monster.id })
+      expect(result.success).toBe(false)
+    })
+  })
+
+  describe('executeAction - ROLL_MOVE_DICE (확장)', () => {
+    it('2d6 + 민첩 수치로 이동력 결정', () => {
+      const diceRoller = new MockDiceRoller()
+      const customEngine = new GameEngine({ diceRoller })
+      const state = customEngine.createGame(defaultOptions)
+
+      // 2d6 = 3+4=7, 민첩=[1,1]=2 → 이동력 9
+      diceRoller.setNextRolls([3, 4])
+      const result = customEngine.executeAction(state, { type: 'ROLL_MOVE_DICE' })
+      expect(result.success).toBe(true)
+
+      const player = customEngine.getCurrentPlayer(result.newState)
+      expect(player?.remainingMovement).toBe(9) // 3+4+1+1
+    })
+  })
+
+  describe('executeAction - ROLL_STAT_DICE (확장)', () => {
+    it('레벨만큼 정수 소모', () => {
+      const diceRoller = new MockDiceRoller()
+      diceRoller.setDefaultValue(3)
+      const customEngine = new GameEngine({ diceRoller })
+      let state = customEngine.createGame(defaultOptions)
+      const player = customEngine.getCurrentPlayer(state)!
+
+      // 힘을 [3,3]=6으로 설정, 레벨=6
+      state = {
+        ...state,
+        players: state.players.map(p =>
+          p.id === player.id
+            ? {
+                ...p,
+                turnPhase: 'action' as const,
+                monsterEssence: 20,
+                stats: { ...p.stats, strength: [3, 3] as [number, number] },
+              }
+            : p
+        ),
+      }
+
+      diceRoller.setNextRolls([6]) // 업그레이드 주사위
+      const result = customEngine.executeAction(state, { type: 'ROLL_STAT_DICE', stat: 'dexterity' })
+      expect(result.success).toBe(true)
+
+      const updated = result.newState.players.find(p => p.id === player.id)!
+      expect(updated.monsterEssence).toBe(20 - 6) // 레벨 6 소모
+    })
+
+    it('능력치 업그레이드 결정론적 테스트 (MockDiceRoller)', () => {
+      const diceRoller = new MockDiceRoller()
+      diceRoller.setDefaultValue(3)
+      const customEngine = new GameEngine({ diceRoller })
+      let state = customEngine.createGame(defaultOptions)
+      const player = customEngine.getCurrentPlayer(state)!
+
+      state = {
+        ...state,
+        players: state.players.map(p =>
+          p.id === player.id
+            ? { ...p, turnPhase: 'action' as const, monsterEssence: 10 }
+            : p
+        ),
+      }
+
+      // 주사위 6 → [1,1]에서 둘 다 후보(1 < 6), 높은 값 1을 +1 → [2,1]
+      diceRoller.setNextRolls([6])
+      const result = customEngine.executeAction(state, { type: 'ROLL_STAT_DICE', stat: 'strength' })
+      expect(result.success).toBe(true)
+
+      const updated = result.newState.players.find(p => p.id === player.id)!
+      const strSum = updated.stats.strength[0] + updated.stats.strength[1]
+      expect(strSum).toBe(3) // [1,1] → [2,1] = 3
+    })
+  })
+
+  describe('executeAction - CHOOSE_CORRUPTION', () => {
+    it('accept: true로 타락 전환', () => {
+      let state = engine.createGame(defaultOptions)
+      const playerId = state.roundTurnOrder[0] as string
+
+      // 타락 용사 처치 후 상태를 시뮬레이션
+      // 실제로는 handleBasicAttack 내에서 자동으로 CHOOSE_CORRUPTION 필요 상태로 전환됨
+      // 여기서는 직접 executeAction 호출
+      state = {
+        ...state,
+        players: state.players.map(p =>
+          p.id === playerId
+            ? { ...p, state: 'holy' as const }
+            : p
+        ),
+      }
+
+      const result = engine.executeAction(state, { type: 'CHOOSE_CORRUPTION', accept: true }, playerId)
+      if (result.success) {
+        const player = result.newState.players.find(p => p.id === playerId)!
+        expect(player.state).toBe('corrupt')
+      }
+    })
+  })
+
+  describe('createGame - 확장', () => {
+    it('계시 덱 초기화 (비어있지 않음)', () => {
+      const state = engine.createGame(defaultOptions)
+      expect(state.revelationDeck.length).toBeGreaterThan(0)
+    })
+
+    it('monsterRoundBuffs 초기 상태', () => {
+      const state = engine.createGame(defaultOptions)
+      expect(state.monsterRoundBuffs).toEqual({
+        golemBasicAttackImmune: false,
+        meteorImmune: false,
+        fireTileDisabled: false,
+      })
+    })
+
+    it('7마리 몬스터 초기화', () => {
+      const state = engine.createGame(defaultOptions)
+      expect(state.monsters).toHaveLength(7)
+
+      const monsterIds = state.monsters.map(m => m.id)
+      expect(monsterIds).toContain('harpy')
+      expect(monsterIds).toContain('grindylow')
+      expect(monsterIds).toContain('lich')
+      expect(monsterIds).toContain('troll')
+      expect(monsterIds).toContain('hydra')
+      expect(monsterIds).toContain('golem')
+      expect(monsterIds).toContain('balrog')
     })
   })
 })

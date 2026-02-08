@@ -16,7 +16,7 @@ import { deserializeBoard, defaultDiceRoller } from '../types'
 import { GAME_BOARD, STARTING_POSITIONS, MONSTERS, TERRAIN_MOVEMENT_COST, DEATH_RESPAWN_TURNS, SKILLS_BY_CLASS, getMaxHealthByLevel, TILE_EFFECTS } from '../constants'
 import { getNeighbors, getDistance, getTile, coordEquals } from '../hex'
 import { useSkill, canUseSkill } from './skills'
-import { completeRevelation, createRevelationDeck, drawRevelation } from './revelations'
+import { completeRevelation, createRevelationDeck, drawRevelation, checkAngel7Protection, processEventRevelations } from './revelations'
 import { checkVictoryCondition } from './victory'
 import { processMonsterPhase as processMonsterPhaseFromModule } from './monsters'
 
@@ -135,7 +135,7 @@ export class GameEngine {
     }
 
     // 비-턴 액션은 해당 플레이어가 수행
-    const nonTurnActions = ['COMPLETE_REVELATION', 'APPLY_CORRUPT_DICE', 'CHOOSE_HOLY']
+    const nonTurnActions = ['COMPLETE_REVELATION', 'APPLY_CORRUPT_DICE', 'CHOOSE_HOLY', 'DRAW_DEMON_SWORD', 'CHOOSE_CORRUPTION', 'CHOOSE_ESCAPE_TILE']
     if (nonTurnActions.includes(action.type) && !actingPlayerId) {
       return {
         success: false,
@@ -168,6 +168,10 @@ export class GameEngine {
         return this.handleChooseHoly(state, actingPlayerId!)
       case 'DRAW_DEMON_SWORD':
         return this.handleDrawDemonSword(state, actingPlayerId!)
+      case 'CHOOSE_CORRUPTION':
+        return this.handleChooseCorruption(state, action.accept, actingPlayerId!)
+      case 'CHOOSE_ESCAPE_TILE':
+        return this.handleChooseEscapeTile(state, action.position, actingPlayerId!)
       default:
         return {
           success: false,
@@ -245,11 +249,18 @@ export class GameEngine {
           const moveCost = TERRAIN_MOVEMENT_COST[tile.type]
           if (moveCost === 'blocked') continue
 
+          // 다른 살아있는 플레이어가 있는 타일 이동 불가
+          if (state.players.some(p => p.id !== targetPlayer.id && !p.isDead && coordEquals(p.position, neighbor))) {
+            continue
+          }
+
           // 타락 용사의 신전 진입 불가 (마검 보유 시 가능)
           if (tile.type === 'temple' && targetPlayer.state === 'corrupt' && !targetPlayer.hasDemonSword) {
             continue
           }
 
+          // 언덕(all)은 이동력 3 이상 필요
+          if (moveCost === 'all' && targetPlayer.remainingMovement < 3) continue
           const actualCost = moveCost === 'all' ? targetPlayer.remainingMovement : moveCost
           if (targetPlayer.remainingMovement >= actualCost) {
             validActions.push({
@@ -275,28 +286,33 @@ export class GameEngine {
 
     // 행동 단계
     if (targetPlayer.turnPhase === 'action') {
-      // 인접한 대상에 대한 기본 공격
-      const neighbors = getNeighbors(targetPlayer.position)
+      // 인접한 대상에 대한 기본 공격 (턴당 1회)
+      if (!targetPlayer.hasUsedBasicAttack) {
+        const neighbors = getNeighbors(targetPlayer.position)
 
-      // 인접 플레이어 공격
-      for (const player of state.players) {
-        if (player.id === targetPlayer.id || player.isDead) continue
-        if (neighbors.some(n => coordEquals(n, player.position))) {
-          validActions.push({
-            action: { type: 'BASIC_ATTACK', targetId: player.id },
-            description: `${player.name}을(를) 공격합니다.`,
-          })
+        // 인접 플레이어 공격
+        for (const player of state.players) {
+          if (player.id === targetPlayer.id || player.isDead) continue
+          if (player.isStealthed) continue  // 은신 중인 대상 공격 불가
+          if (neighbors.some(n => coordEquals(n, player.position))) {
+            validActions.push({
+              action: { type: 'BASIC_ATTACK', targetId: player.id },
+              description: `${player.name}을(를) 공격합니다.`,
+            })
+          }
         }
-      }
 
-      // 인접 몬스터 공격
-      for (const monster of state.monsters) {
-        if (monster.isDead) continue
-        if (neighbors.some(n => coordEquals(n, monster.position))) {
-          validActions.push({
-            action: { type: 'BASIC_ATTACK', targetId: monster.id },
-            description: `${monster.name}을(를) 공격합니다.`,
-          })
+        // 인접 몬스터 공격 (마검 소유자는 몬스터 공격 불가)
+        if (!targetPlayer.hasDemonSword) {
+          for (const monster of state.monsters) {
+            if (monster.isDead) continue
+            if (neighbors.some(n => coordEquals(n, monster.position))) {
+              validActions.push({
+                action: { type: 'BASIC_ATTACK', targetId: monster.id },
+                description: `${monster.name}을(를) 공격합니다.`,
+              })
+            }
+          }
         }
       }
 
@@ -557,28 +573,124 @@ export class GameEngine {
       }
     }
 
+    const events: GameEvent[] = []
+    let newState = { ...state }
+    let message = ''
+
+    // === 턴 시작 시 자동 처리 ===
+
+    // 1. 산/호수 위치 체크 → 가장 가까운 이동 가능 타일로 자동 이동
+    const board = deserializeBoard(state.board)
+    const playerTile = getTile(board, currentPlayer.position)
+    if (playerTile && (playerTile.type === 'mountain' || playerTile.type === 'lake')) {
+      const neighbors = getNeighbors(currentPlayer.position)
+      const escapeTiles = neighbors.filter(n => {
+        const tile = getTile(board, n)
+        if (!tile) return false
+        const cost = TERRAIN_MOVEMENT_COST[tile.type]
+        return cost !== 'blocked'
+      })
+      if (escapeTiles.length === 1) {
+        const escapeTo = escapeTiles[0]
+        newState = {
+          ...newState,
+          players: newState.players.map(p =>
+            p.id === currentPlayer.id ? { ...p, position: escapeTo } : p
+          ),
+        }
+        events.push({ type: 'PLAYER_MOVED', playerId: currentPlayer.id, from: currentPlayer.position, to: escapeTo })
+        message += `산/호수에서 탈출! `
+      } else if (escapeTiles.length > 1) {
+        // 여러 개면 CHOOSE_ESCAPE_TILE로 선택해야 함 - 일단 첫 번째로 자동 이동
+        const escapeTo = escapeTiles[0]
+        newState = {
+          ...newState,
+          players: newState.players.map(p =>
+            p.id === currentPlayer.id ? { ...p, position: escapeTo } : p
+          ),
+        }
+        events.push({ type: 'PLAYER_MOVED', playerId: currentPlayer.id, from: currentPlayer.position, to: escapeTo })
+        message += `산/호수에서 탈출! `
+      }
+    }
+
+    // 2. 속박 해제 (이동력 0으로 설정)
+    let boundOverride = false
+    if (currentPlayer.isBound) {
+      newState = {
+        ...newState,
+        players: newState.players.map(p =>
+          p.id === currentPlayer.id ? { ...p, isBound: false } : p
+        ),
+      }
+      boundOverride = true
+      message += '속박이 해제되었습니다. 이번 턴은 이동할 수 없습니다. '
+    }
+
+    // 3. 무적 태세 해제
+    if (currentPlayer.ironStanceActive) {
+      newState = {
+        ...newState,
+        players: newState.players.map(p =>
+          p.id === currentPlayer.id ? { ...p, ironStanceActive: false } : p
+        ),
+      }
+    }
+
+    // 4. 화염 타일 피해 (현재 위치가 화염이면)
+    const updatedPlayer = newState.players.find(p => p.id === currentPlayer.id)!
+    const updatedTile = getTile(board, updatedPlayer.position)
+    if (updatedTile?.type === 'fire' && updatedPlayer.state !== 'corrupt' && !newState.monsterRoundBuffs.fireTileDisabled) {
+      const fireDamage = TILE_EFFECTS.fire.baseDamage
+      newState = {
+        ...newState,
+        players: newState.players.map(p => {
+          if (p.id !== currentPlayer.id) return p
+          const newHealth = Math.max(0, p.health - fireDamage)
+          return {
+            ...p,
+            health: newHealth,
+            isDead: newHealth <= 0,
+            deathTurnsRemaining: newHealth <= 0 ? DEATH_RESPAWN_TURNS : p.deathTurnsRemaining,
+          }
+        }),
+      }
+      message += `화염 타일 피해 ${fireDamage}! `
+      events.push({ type: 'PLAYER_ATTACKED', attackerId: 'fire', targetId: currentPlayer.id, damage: fireDamage })
+    }
+
+    // === 이동 주사위 굴리기 ===
+
     // 2d6 굴리기
     const [dice1, dice2] = this.roll2d6()
     const diceSum = dice1 + dice2
 
     // 이동력 = 2d6 + 민첩(주사위 2개 합)
     const dexBonus = this.getStatTotal(currentPlayer.stats.dexterity)
-    const totalMovement = diceSum + dexBonus
+    let totalMovement = diceSum + dexBonus
 
-    const newPlayers = state.players.map(p =>
+    // 속박이었으면 이동력 0
+    if (boundOverride) {
+      totalMovement = 0
+    }
+
+    const newPlayers = newState.players.map(p =>
       p.id === currentPlayer.id
         ? { ...p, remainingMovement: totalMovement }
         : p
     )
 
+    message += `이동 주사위: ${dice1} + ${dice2} = ${diceSum}, 민첩 보너스: +${dexBonus}. 총 이동력: ${boundOverride ? 0 : totalMovement}`
+    events.push({ type: 'MOVE_DICE_ROLLED', playerId: currentPlayer.id, dice1, dice2, dexBonus, total: totalMovement })
+
     return {
       success: true,
       newState: {
-        ...state,
+        ...newState,
         players: newPlayers,
       },
-      message: `이동 주사위: ${dice1} + ${dice2} = ${diceSum}, 민첩 보너스: +${dexBonus}. 총 이동력: ${totalMovement}`,
-      events: [],
+      message,
+      events,
     }
   }
 
@@ -646,12 +758,32 @@ export class GameEngine {
       }
     }
 
+    // 다른 살아있는 플레이어가 있는 타일 이동 불가
+    if (state.players.some(p => p.id !== currentPlayer.id && !p.isDead && coordEquals(p.position, position))) {
+      return {
+        success: false,
+        newState: state,
+        message: '다른 플레이어가 있는 타일로 이동할 수 없습니다.',
+        events: [],
+      }
+    }
+
     // 타락 용사의 신전 진입 불가 (마검 보유 시 가능)
     if (targetTile.type === 'temple' && currentPlayer.state === 'corrupt' && !currentPlayer.hasDemonSword) {
       return {
         success: false,
         newState: state,
         message: '타락한 용사는 신전에 진입할 수 없습니다. (마검 보유 시 가능)',
+        events: [],
+      }
+    }
+
+    // 언덕(all)은 이동력 3 이상 필요
+    if (moveCost === 'all' && currentPlayer.remainingMovement < 3) {
+      return {
+        success: false,
+        newState: state,
+        message: '언덕 진입에는 이동력 3 이상이 필요합니다.',
         events: [],
       }
     }
@@ -773,6 +905,16 @@ export class GameEngine {
       }
     }
 
+    // 턴당 1회 제한
+    if (currentPlayer.hasUsedBasicAttack) {
+      return {
+        success: false,
+        newState: state,
+        message: '이번 턴에 이미 기본 공격을 사용했습니다.',
+        events: [],
+      }
+    }
+
     // 대상 찾기 (플레이어 또는 몬스터)
     const targetPlayer = state.players.find(p => p.id === targetId)
     const targetMonster = state.monsters.find(m => m.id === targetId)
@@ -782,6 +924,16 @@ export class GameEngine {
         success: false,
         newState: state,
         message: '대상을 찾을 수 없습니다.',
+        events: [],
+      }
+    }
+
+    // 마검 소유자는 몬스터 공격 불가 (양방향 불가)
+    if (targetMonster && currentPlayer.hasDemonSword) {
+      return {
+        success: false,
+        newState: state,
+        message: '마검 소유자는 몬스터를 공격할 수 없습니다.',
         events: [],
       }
     }
@@ -800,32 +952,102 @@ export class GameEngine {
       }
     }
 
-    // 피해 계산: 힘(주사위 2개 합)
-    const damage = this.getStatTotal(currentPlayer.stats.strength)
+    // 은신 해제 (공격 시)
+    let attackerStealthBroken = currentPlayer.isStealthed
+
+    // 피해 계산: 힘(주사위 2개 합) + 독 바르기 보너스
+    let damage = this.getStatTotal(currentPlayer.stats.strength)
+    let poisonUsed = false
+    if (currentPlayer.poisonActive) {
+      damage += this.getStatTotal(currentPlayer.stats.dexterity)
+      poisonUsed = true
+    }
 
     let newState = { ...state }
     let targetName: string
 
     if (targetPlayer) {
+      // 대상이 은신 상태면 공격 불가
+      if (targetPlayer.isStealthed) {
+        return {
+          success: false,
+          newState: state,
+          message: '은신 중인 대상은 공격할 수 없습니다.',
+          events: [],
+        }
+      }
+
+      // 대상의 무적 태세로 피해 감소
+      let actualDamage = damage
+      if (targetPlayer.ironStanceActive) {
+        const reduction = targetPlayer.stats.strength[0] + targetPlayer.stats.strength[1]
+        actualDamage = Math.max(0, actualDamage - reduction)
+      }
+
+      // angel-7 (천사의 가호) 체크: 치명적 피해 시 보호
+      const angel7Result = checkAngel7Protection(newState, targetId, currentPlayer.id, actualDamage)
+      if (angel7Result.protected) {
+        // 천사의 가호로 생존 - 공격자 상태 업데이트
+        newState = {
+          ...angel7Result.newState,
+          players: angel7Result.newState.players.map(p =>
+            p.id === currentPlayer.id
+              ? {
+                  ...p,
+                  hasUsedBasicAttack: true,
+                  poisonActive: poisonUsed ? false : p.poisonActive,
+                  isStealthed: attackerStealthBroken ? false : p.isStealthed,
+                }
+              : p
+          ),
+        }
+        events.push({
+          type: 'PLAYER_ATTACKED',
+          attackerId: currentPlayer.id,
+          targetId,
+          damage: actualDamage,
+        })
+        events.push(...angel7Result.events)
+
+        // 이벤트 기반 계시 자동 완료 (공격자)
+        const revResult = processEventRevelations(newState, {
+          attackerId: currentPlayer.id,
+          targetId,
+          targetDied: false,
+          targetIsMonster: false,
+        })
+        newState = revResult.newState
+        events.push(...revResult.events)
+
+        return {
+          success: true,
+          newState,
+          message: `${targetPlayer.name}이(가) 천사의 가호로 생존했습니다! (체력 1)`,
+          events,
+        }
+      }
+
       // 플레이어 공격
       targetName = targetPlayer.name
-      const newHealth = Math.max(0, targetPlayer.health - damage)
+      const newHealth = Math.max(0, targetPlayer.health - actualDamage)
       const isDead = newHealth <= 0
 
       // 용사 처치 시 타락 로직
       let attackerCorruption = false
       let corruptDiceValue: number | null = null
 
-      if (isDead && currentPlayer.state === 'holy') {
-        // 신성 용사가 다른 용사를 처치하면 타락
+      if (isDead && currentPlayer.state === 'holy' && targetPlayer.state === 'holy') {
+        // 신성 용사가 비타락 용사를 처치하면 자동 타락
         attackerCorruption = true
-        // 타락 주사위 기본값 1
         corruptDiceValue = 1
       } else if (isDead && currentPlayer.state === 'corrupt') {
         // 타락 용사가 처치하면 타락 주사위 +1
         const currentCorrupt = currentPlayer.corruptDice ?? 0
         corruptDiceValue = Math.min(6, currentCorrupt + 1)
       }
+      // 타락 용사 처치 시 → CHOOSE_CORRUPTION 으로 선택 (isDead && targetPlayer.state === 'corrupt' && currentPlayer.state === 'holy')
+      // 이 경우 자동 타락 하지 않고, 별도 CHOOSE_CORRUPTION 액션 대기
+      // 여기서는 처치만 처리하고 타락 선택은 별도
 
       newState = {
         ...newState,
@@ -839,18 +1061,18 @@ export class GameEngine {
             }
           }
           if (p.id === currentPlayer.id) {
-            if (attackerCorruption) {
-              return {
-                ...p,
-                state: 'corrupt' as const,
-                corruptDice: corruptDiceValue,
-              }
-            } else if (corruptDiceValue !== null) {
-              return {
-                ...p,
-                corruptDice: corruptDiceValue,
-              }
+            const updates: Partial<Player> = {
+              hasUsedBasicAttack: true,
+              poisonActive: poisonUsed ? false : p.poisonActive,
+              isStealthed: attackerStealthBroken ? false : p.isStealthed,
             }
+            if (attackerCorruption) {
+              updates.state = 'corrupt' as const
+              updates.corruptDice = corruptDiceValue
+            } else if (corruptDiceValue !== null) {
+              updates.corruptDice = corruptDiceValue
+            }
+            return { ...p, ...updates }
           }
           return p
         }),
@@ -860,7 +1082,7 @@ export class GameEngine {
         type: 'PLAYER_ATTACKED',
         attackerId: currentPlayer.id,
         targetId,
-        damage,
+        damage: actualDamage,
       })
 
       if (isDead) {
@@ -869,10 +1091,40 @@ export class GameEngine {
           playerId: targetId,
         })
       }
+
+      // 이벤트 기반 계시 자동 완료 (공격자 - 플레이어 공격)
+      const revResult = processEventRevelations(newState, {
+        attackerId: currentPlayer.id,
+        targetId,
+        targetDied: isDead,
+        targetIsMonster: false,
+      })
+      newState = revResult.newState
+      events.push(...revResult.events)
     } else {
       // 몬스터 공격
       const monster = targetMonster!
       targetName = monster.name
+
+      // 골렘 기본 공격 면역 체크
+      if (monster.id === 'golem' && state.monsterRoundBuffs.golemBasicAttackImmune) {
+        // 기본 공격 면역이지만 hasUsedBasicAttack은 소모
+        newState = {
+          ...newState,
+          players: state.players.map(p =>
+            p.id === currentPlayer.id
+              ? { ...p, hasUsedBasicAttack: true, poisonActive: poisonUsed ? false : p.poisonActive, isStealthed: attackerStealthBroken ? false : p.isStealthed }
+              : p
+          ),
+        }
+        return {
+          success: true,
+          newState,
+          message: `${targetName}이(가) 기본 공격을 무시했습니다!`,
+          events: [],
+        }
+      }
+
       // 실제 피해량 (남은 체력보다 많으면 남은 체력만큼만)
       const actualDamage = Math.min(damage, monster.health)
       const newHealth = Math.max(0, monster.health - damage)
@@ -885,12 +1137,25 @@ export class GameEngine {
             ? { ...m, health: newHealth, isDead }
             : m
         ),
-        // 실제 피해만큼 몬스터 정수 획득
         players: state.players.map(p =>
           p.id === currentPlayer.id
-            ? { ...p, monsterEssence: p.monsterEssence + actualDamage }
+            ? {
+                ...p,
+                monsterEssence: p.monsterEssence + actualDamage,
+                hasUsedBasicAttack: true,
+                poisonActive: poisonUsed ? false : p.poisonActive,
+                isStealthed: attackerStealthBroken ? false : p.isStealthed,
+              }
             : p
         ),
+      }
+
+      // 발록 사망 시 화염 타일 비활성
+      if (isDead && targetId === 'balrog') {
+        newState = {
+          ...newState,
+          monsterRoundBuffs: { ...newState.monsterRoundBuffs, fireTileDisabled: true },
+        }
       }
 
       events.push({
@@ -906,12 +1171,23 @@ export class GameEngine {
           monsterId: targetId,
         })
       }
+
+      // 이벤트 기반 계시 자동 완료 (공격자 - 몬스터 공격)
+      const revResult = processEventRevelations(newState, {
+        attackerId: currentPlayer.id,
+        targetId,
+        targetDied: isDead,
+        targetIsMonster: true,
+        targetMonsterId: monster.id,
+      })
+      newState = revResult.newState
+      events.push(...revResult.events)
     }
 
     return {
       success: true,
       newState,
-      message: `${targetName}에게 ${damage}의 피해를 입혔습니다.`,
+      message: `${targetName}에게 ${damage}의 피해를 입혔습니다.${poisonUsed ? ' (독 추가 피해)' : ''}`,
       events,
     }
   }
@@ -1473,6 +1749,97 @@ export class GameEngine {
       },
       message: `${player.name}이(가) 마검을 뽑았습니다!`,
       events: [],
+    }
+  }
+
+  /**
+   * 타락 용사 처치 후 타락 여부 선택
+   */
+  private handleChooseCorruption(state: GameState, accept: boolean, playerId: string): ActionResult {
+    const player = state.players.find(p => p.id === playerId)
+
+    if (!player) {
+      return {
+        success: false,
+        newState: state,
+        message: '플레이어를 찾을 수 없습니다.',
+        events: [],
+      }
+    }
+
+    if (!accept) {
+      return {
+        success: true,
+        newState: state,
+        message: '타락을 거부하고 신성 상태를 유지합니다.',
+        events: [],
+      }
+    }
+
+    // 타락 전환 + 타락 주사위 획득
+    const newPlayers = state.players.map(p =>
+      p.id === playerId
+        ? {
+            ...p,
+            state: 'corrupt' as const,
+            corruptDice: (p.corruptDice ?? 0) + 1,
+          }
+        : p
+    )
+
+    return {
+      success: true,
+      newState: { ...state, players: newPlayers },
+      message: '타락을 선택했습니다. 타락 주사위를 획득합니다.',
+      events: [],
+    }
+  }
+
+  /**
+   * 산/호수 탈출 시 목적지 선택
+   */
+  private handleChooseEscapeTile(state: GameState, position: HexCoord, playerId: string): ActionResult {
+    const player = state.players.find(p => p.id === playerId)
+
+    if (!player) {
+      return {
+        success: false,
+        newState: state,
+        message: '플레이어를 찾을 수 없습니다.',
+        events: [],
+      }
+    }
+
+    const boardMap = deserializeBoard(state.board)
+    const targetTile = getTile(boardMap, position)
+    if (!targetTile) {
+      return {
+        success: false,
+        newState: state,
+        message: '존재하지 않는 타일입니다.',
+        events: [],
+      }
+    }
+
+    const cost = TERRAIN_MOVEMENT_COST[targetTile.type]
+    if (cost === 'blocked') {
+      return {
+        success: false,
+        newState: state,
+        message: '이동할 수 없는 타일입니다.',
+        events: [],
+      }
+    }
+
+    const newPlayers = state.players.map(p =>
+      p.id === playerId ? { ...p, position } : p
+    )
+
+    return {
+      success: true,
+      newState: { ...state, players: newPlayers },
+      message: `(${position.q}, ${position.r})로 탈출했습니다.`,
+      events: [{ type: 'PLAYER_MOVED' as const, playerId, from: player.position, to: position }],
     }
   }
 }

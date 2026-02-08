@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { GameEngine, type CreateGameOptions } from '../engine/game-engine'
 import type { GameState, Player, HexCoord } from '../types'
-import { STARTING_POSITIONS, DEATH_RESPAWN_TURNS } from '../constants'
+import { STARTING_POSITIONS, DEATH_RESPAWN_TURNS, TILE_EFFECTS } from '../constants'
+import { MockDiceRoller } from './test-helpers'
 
 /**
  * 4명 플레이어 게임 진행 통합 테스트
@@ -1158,6 +1159,168 @@ describe('Game Flow - 4 Players', () => {
       // 타락 주사위 적용 액션이 있어야 함
       const applyCorruptActions = actions.filter((a) => a.action.type === 'APPLY_CORRUPT_DICE')
       expect(applyCorruptActions.length).toBeGreaterThan(0)
+    })
+  })
+
+  // ===== 12. 턴 시작 자동 처리 =====
+
+  describe('턴 시작 자동 처리', () => {
+    it('속박 해제 (isBound → false, 이동력 0)', () => {
+      const diceRoller = new MockDiceRoller()
+      diceRoller.setDefaultValue(3)
+      const customEngine = new GameEngine({ maxPlayers: 4, diceRoller })
+      let state = customEngine.createGame(playerConfigs)
+
+      const playerId = state.roundTurnOrder[0] as string
+
+      // 플레이어를 속박 상태로
+      state = {
+        ...state,
+        players: state.players.map(p =>
+          p.id === playerId ? { ...p, isBound: true } : p
+        ),
+      }
+
+      // ROLL_MOVE_DICE에서 턴 시작 처리 발생
+      diceRoller.setNextRolls([3, 3])
+      const result = customEngine.executeAction(state, { type: 'ROLL_MOVE_DICE' })
+      expect(result.success).toBe(true)
+
+      const player = result.newState.players.find(p => p.id === playerId)!
+      expect(player.isBound).toBe(false)
+      expect(player.remainingMovement).toBe(0) // 속박으로 이동력 0
+    })
+
+    it('무적 태세 해제 (ironStanceActive → false)', () => {
+      const diceRoller = new MockDiceRoller()
+      diceRoller.setDefaultValue(3)
+      const customEngine = new GameEngine({ maxPlayers: 4, diceRoller })
+      let state = customEngine.createGame(playerConfigs)
+
+      const playerId = state.roundTurnOrder[0] as string
+
+      state = {
+        ...state,
+        players: state.players.map(p =>
+          p.id === playerId ? { ...p, ironStanceActive: true } : p
+        ),
+      }
+
+      diceRoller.setNextRolls([3, 3])
+      const result = customEngine.executeAction(state, { type: 'ROLL_MOVE_DICE' })
+      expect(result.success).toBe(true)
+
+      const player = result.newState.players.find(p => p.id === playerId)!
+      expect(player.ironStanceActive).toBe(false)
+    })
+  })
+
+  // ===== 13. 마을 회복 =====
+
+  describe('마을 회복', () => {
+    it('마을에서 턴 종료 시 회복', () => {
+      let state = gameState
+      const playerId = state.roundTurnOrder[0] as string
+
+      // 플레이어를 직업 마을에 배치 + 체력 감소
+      const player = state.players.find(p => p.id === playerId)!
+      const startPos = STARTING_POSITIONS[player.heroClass][0]
+
+      state = {
+        ...state,
+        players: state.players.map(p =>
+          p.id === playerId
+            ? { ...p, position: startPos, health: 10, turnPhase: 'action' as const }
+            : p
+        ),
+      }
+
+      const endResult = engine.executeAction(state, { type: 'END_TURN' })
+      expect(endResult.success).toBe(true)
+
+      const updatedPlayer = endResult.newState.players.find(p => p.id === playerId)!
+      // 자기 직업 마을이면 10 회복
+      expect(updatedPlayer.health).toBeGreaterThan(10)
+    })
+  })
+
+  // ===== 14. 버프 생명주기 =====
+
+  describe('버프 생명주기', () => {
+    it('독 바르기: 기본공격에 민첩 추가 피해 후 소모', () => {
+      let state = gameState
+      const playerId = state.roundTurnOrder[0] as string
+
+      // 다른 플레이어를 인접하게 배치
+      const player = state.players.find(p => p.id === playerId)!
+      const targetId = state.players.find(p => p.id !== playerId)!.id
+
+      state = {
+        ...state,
+        players: state.players.map(p => {
+          if (p.id === playerId) {
+            return {
+              ...p,
+              turnPhase: 'action' as const,
+              poisonActive: true,
+              stats: { ...p.stats, strength: [3, 3] as [number, number], dexterity: [2, 2] as [number, number] },
+            }
+          }
+          if (p.id === targetId) {
+            return {
+              ...p,
+              position: { q: player.position.q + 1, r: player.position.r },
+              health: 30,
+              maxHealth: 30,
+            }
+          }
+          return p
+        }),
+      }
+
+      const attackResult = engine.executeAction(state, { type: 'BASIC_ATTACK', targetId })
+      expect(attackResult.success).toBe(true)
+
+      // 기본 피해 6(힘) + 독 4(민첩) = 10
+      const target = attackResult.newState.players.find(p => p.id === targetId)!
+      expect(target.health).toBe(30 - 10)
+
+      // 독 소모
+      const attacker = attackResult.newState.players.find(p => p.id === playerId)!
+      expect(attacker.poisonActive).toBe(false)
+    })
+
+    it('은신: 공격 시 해제됨', () => {
+      let state = gameState
+      const playerId = state.roundTurnOrder[0] as string
+      const player = state.players.find(p => p.id === playerId)!
+      const targetId = state.players.find(p => p.id !== playerId)!.id
+
+      state = {
+        ...state,
+        players: state.players.map(p => {
+          if (p.id === playerId) {
+            return {
+              ...p,
+              turnPhase: 'action' as const,
+              isStealthed: true,
+            }
+          }
+          if (p.id === targetId) {
+            return {
+              ...p,
+              position: { q: player.position.q + 1, r: player.position.r },
+            }
+          }
+          return p
+        }),
+      }
+
+      const attackResult = engine.executeAction(state, { type: 'BASIC_ATTACK', targetId })
+      expect(attackResult.success).toBe(true)
+
+      const attacker = attackResult.newState.players.find(p => p.id === playerId)!
+      expect(attacker.isStealthed).toBe(false)
     })
   })
 })

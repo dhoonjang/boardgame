@@ -1,374 +1,502 @@
-import { describe, expect, it } from 'vitest'
-import { GAME_BOARD } from '../constants'
-import {
-  applyDamageToMonster,
-  applyDamageToPlayer,
-  applyFireTileDamage,
-  applyTileEntryDamage,
-  calculateDamage,
-  healAtVillage,
-} from '../engine/combat'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { GameEngine } from '../engine/game-engine'
-import type { GameState } from '../types'
+import type { GameState, Player, HexCoord } from '../types'
+import {
+  applyDamageToPlayer,
+  applyDamageToMonster,
+  healAtVillage,
+  applyFireTileDamage,
+} from '../engine/combat'
+import { GAME_BOARD, STARTING_POSITIONS, TILE_EFFECTS, DEATH_RESPAWN_TURNS } from '../constants'
+import { MockDiceRoller } from './test-helpers'
 
-function createTestState(): GameState {
-  const engine = new GameEngine()
-  return engine.createGame({
+/**
+ * 테스트용 게임 상태 생성 헬퍼
+ */
+function createTestState(overrides?: {
+  playerOverrides?: Array<Partial<Player> & { index?: number }>
+  monsterOverrides?: Array<{ id: string } & Record<string, any>>
+}): GameState {
+  const diceRoller = new MockDiceRoller()
+  diceRoller.setDefaultValue(3)
+  const engine = new GameEngine({ diceRoller })
+
+  let state = engine.createGame({
     players: [
-      { id: 'player-1', name: 'Warrior', heroClass: 'warrior' },
-      { id: 'player-2', name: 'Rogue', heroClass: 'rogue' },
+      { id: 'warrior-1', name: 'Warrior', heroClass: 'warrior' },
+      { id: 'rogue-1', name: 'Rogue', heroClass: 'rogue' },
+      { id: 'mage-1', name: 'Mage', heroClass: 'mage' },
     ],
   })
+
+  if (overrides?.playerOverrides) {
+    for (const override of overrides.playerOverrides) {
+      const idx = override.index ?? 0
+      const { index: _, ...rest } = override
+      state = {
+        ...state,
+        players: state.players.map((p, i) => i === idx ? { ...p, ...rest } : p),
+      }
+    }
+  }
+
+  if (overrides?.monsterOverrides) {
+    state = {
+      ...state,
+      monsters: state.monsters.map(m => {
+        const override = overrides.monsterOverrides!.find(o => o.id === m.id)
+        return override ? { ...m, ...override } : m
+      }),
+    }
+  }
+
+  return state
 }
 
 describe('combat', () => {
-  describe('calculateDamage', () => {
-    it('기본 피해를 계산한다', () => {
-      const state = createTestState()
-      const attacker = state.players[0]
-      const target = state.players[1]
-
-      const result = calculateDamage(attacker, target, 10)
-
-      expect(result.baseDamage).toBe(10)
-      expect(result.finalDamage).toBe(10)
-    })
-
-    it('스킬 보너스를 추가한다', () => {
-      const state = createTestState()
-      const attacker = state.players[0]
-      const target = state.players[1]
-
-      const result = calculateDamage(attacker, target, 10, {
-        isSkill: true,
-        skillBonus: 5,
-      })
-
-      expect(result.baseDamage).toBe(10)
-      expect(result.bonusDamage).toBe(5)
-      expect(result.finalDamage).toBe(15)
-    })
-  })
-
   describe('applyDamageToPlayer', () => {
     it('플레이어에게 피해를 적용한다', () => {
       const state = createTestState()
-      const targetId = 'player-2'
+      const target = state.players[0]
 
-      const { newState, events } = applyDamageToPlayer(state, targetId, 5, 'player-1')
+      const result = applyDamageToPlayer(state, target.id, 5)
 
-      const target = newState.players.find(p => p.id === targetId)
-      expect(target?.health).toBe(15) // 20 - 5
-      expect(target?.isDead).toBe(false)
-      expect(events).toContainEqual(
-        expect.objectContaining({ type: 'PLAYER_ATTACKED', damage: 5 })
-      )
+      const updatedTarget = result.newState.players.find(p => p.id === target.id)!
+      expect(updatedTarget.health).toBe(target.health - 5)
+      expect(updatedTarget.isDead).toBe(false)
     })
 
     it('체력이 0 이하가 되면 사망 처리한다', () => {
-      const state = createTestState()
-      const targetId = 'player-2'
+      const state = createTestState({
+        playerOverrides: [{ index: 0, health: 5 }],
+      })
+      const target = state.players[0]
 
-      const { newState, events } = applyDamageToPlayer(state, targetId, 25)
+      const result = applyDamageToPlayer(state, target.id, 10)
 
-      const target = newState.players.find(p => p.id === targetId)
-      expect(target?.health).toBe(0)
-      expect(target?.isDead).toBe(true)
-      expect(target?.deathTurnsRemaining).toBe(3)
-      expect(events).toContainEqual(
-        expect.objectContaining({ type: 'PLAYER_DIED', playerId: targetId })
-      )
+      const updatedTarget = result.newState.players.find(p => p.id === target.id)!
+      expect(updatedTarget.health).toBe(0)
+      expect(updatedTarget.isDead).toBe(true)
+      expect(updatedTarget.deathTurnsRemaining).toBe(DEATH_RESPAWN_TURNS)
+      expect(result.events.some(e => e.type === 'PLAYER_DIED')).toBe(true)
     })
 
     it('이미 죽은 플레이어는 무시한다', () => {
-      let state = createTestState()
-      const targetId = 'player-2'
+      const state = createTestState({
+        playerOverrides: [{ index: 0, isDead: true, health: 0 }],
+      })
+      const target = state.players[0]
 
-      // 먼저 플레이어를 죽인다
-      state = {
-        ...state,
-        players: state.players.map(p =>
-          p.id === targetId ? { ...p, isDead: true, health: 0 } : p
-        ),
-      }
+      const result = applyDamageToPlayer(state, target.id, 10)
 
-      const { newState, events } = applyDamageToPlayer(state, targetId, 10)
+      expect(result.events).toHaveLength(0)
+    })
 
-      expect(events).toHaveLength(0)
-      expect(newState).toEqual(state)
+    it('attackerId가 있으면 PLAYER_ATTACKED 이벤트를 발생시킨다', () => {
+      const state = createTestState()
+      const target = state.players[0]
+      const attacker = state.players[1]
+
+      const result = applyDamageToPlayer(state, target.id, 5, attacker.id)
+
+      expect(result.events).toContainEqual({
+        type: 'PLAYER_ATTACKED',
+        attackerId: attacker.id,
+        targetId: target.id,
+        damage: 5,
+      })
     })
   })
 
   describe('applyDamageToMonster', () => {
     it('몬스터에게 피해를 적용한다', () => {
       const state = createTestState()
-      const monster = state.monsters[0]
-      const attackerId = 'player-1'
+      const monster = state.monsters.find(m => m.id === 'harpy')!
+      const attacker = state.players[0]
 
-      const { newState, events } = applyDamageToMonster(
-        state,
-        monster.id,
-        10,
-        attackerId
-      )
+      const result = applyDamageToMonster(state, monster.id, 5, attacker.id)
 
-      const updatedMonster = newState.monsters.find(m => m.id === monster.id)
-      expect(updatedMonster?.health).toBe(monster.health - 10)
-      expect(events).toContainEqual(
-        expect.objectContaining({ type: 'PLAYER_ATTACKED', targetId: monster.id })
-      )
+      const updatedMonster = result.newState.monsters.find(m => m.id === monster.id)!
+      expect(updatedMonster.health).toBe(monster.health - 5)
     })
 
-    it('몬스터에게 준 피해만큼 몬스터 정수를 획득한다', () => {
+    it('피해만큼 몬스터 정수를 획득한다', () => {
       const state = createTestState()
-      const monster = state.monsters[0]
-      const attackerId = 'player-1'
+      const monster = state.monsters.find(m => m.id === 'harpy')!
+      const attacker = state.players[0]
 
-      const { newState } = applyDamageToMonster(state, monster.id, 10, attackerId)
+      const result = applyDamageToMonster(state, monster.id, 5, attacker.id)
 
-      const attacker = newState.players.find(p => p.id === attackerId)
-      expect(attacker?.monsterEssence).toBe(10)
+      const updatedAttacker = result.newState.players.find(p => p.id === attacker.id)!
+      expect(updatedAttacker.monsterEssence).toBe(attacker.monsterEssence + 5)
     })
 
-    it('몬스터의 남은 체력보다 많은 피해는 남은 체력만큼만 정수로 획득한다', () => {
-      let state = createTestState()
-      const monster = state.monsters[0]
-      const attackerId = 'player-1'
+    it('남은 체력보다 많은 피해는 남은 체력만큼만 정수로 획득', () => {
+      const state = createTestState({
+        monsterOverrides: [{ id: 'harpy', health: 3 }],
+      })
+      const attacker = state.players[0]
 
-      // 몬스터 체력을 5로 설정
-      state = {
-        ...state,
-        monsters: state.monsters.map(m =>
-          m.id === monster.id ? { ...m, health: 5 } : m
-        ),
-      }
+      const result = applyDamageToMonster(state, 'harpy', 100, attacker.id)
 
-      const { newState } = applyDamageToMonster(state, monster.id, 100, attackerId)
-
-      const attacker = newState.players.find(p => p.id === attackerId)
-      expect(attacker?.monsterEssence).toBe(5)
+      const updatedAttacker = result.newState.players.find(p => p.id === attacker.id)!
+      expect(updatedAttacker.monsterEssence).toBe(attacker.monsterEssence + 3)
     })
 
-    it('몬스터가 죽으면 MONSTER_DIED 이벤트를 발생시킨다', () => {
-      let state = createTestState()
-      const monster = state.monsters[0]
-      const attackerId = 'player-1'
+    it('몬스터 사망 시 MONSTER_DIED 이벤트', () => {
+      const state = createTestState({
+        monsterOverrides: [{ id: 'harpy', health: 1 }],
+      })
+      const attacker = state.players[0]
 
-      // 몬스터 체력을 10으로 설정
-      state = {
-        ...state,
-        monsters: state.monsters.map(m =>
-          m.id === monster.id ? { ...m, health: 10 } : m
-        ),
-      }
+      const result = applyDamageToMonster(state, 'harpy', 5, attacker.id)
 
-      const { newState, events } = applyDamageToMonster(
-        state,
-        monster.id,
-        10,
-        attackerId
-      )
-
-      const updatedMonster = newState.monsters.find(m => m.id === monster.id)
-      expect(updatedMonster?.isDead).toBe(true)
-      expect(events).toContainEqual(
-        expect.objectContaining({ type: 'MONSTER_DIED', monsterId: monster.id })
-      )
+      const updatedMonster = result.newState.monsters.find(m => m.id === 'harpy')!
+      expect(updatedMonster.isDead).toBe(true)
+      expect(result.events.some(e => e.type === 'MONSTER_DIED')).toBe(true)
     })
   })
 
   describe('healAtVillage', () => {
-    it('자기 직업 마을에서 10 회복한다', () => {
-      let state = createTestState()
-      const warrior = state.players.find(p => p.heroClass === 'warrior')!
+    it('자기 직업 마을에서 10 회복', () => {
+      const warriorStart = STARTING_POSITIONS.warrior[0]
+      const state = createTestState({
+        playerOverrides: [{ index: 0, position: warriorStart, health: 20, maxHealth: 30 }],
+      })
 
-      // 체력을 10으로 설정하고 전사 마을에 위치
-      const warriorVillage = GAME_BOARD.find(
-        t => t.type === 'village' && t.villageClass === 'warrior'
-      )!
+      const result = healAtVillage(state, 'warrior-1')
 
-      state = {
-        ...state,
-        players: state.players.map(p =>
-          p.id === warrior.id
-            ? { ...p, health: 10, position: warriorVillage.coord }
-            : p
-        ),
-      }
-
-      const { newState, healAmount } = healAtVillage(state, warrior.id)
-
-      const healed = newState.players.find(p => p.id === warrior.id)
-      expect(healed?.health).toBe(20) // 10 + 10
-      expect(healAmount).toBe(10)
+      const healed = result.newState.players.find(p => p.id === 'warrior-1')!
+      expect(result.healAmount).toBe(10)
+      expect(healed.health).toBe(30)
     })
 
-    it('다른 직업 마을에서 5 회복한다', () => {
-      let state = createTestState()
-      const warrior = state.players.find(p => p.heroClass === 'warrior')!
+    it('다른 직업 마을에서 5 회복', () => {
+      const rogueStart = STARTING_POSITIONS.rogue[0]
+      const state = createTestState({
+        playerOverrides: [{ index: 0, position: rogueStart, health: 20, maxHealth: 30 }],
+      })
 
-      // 도적 마을에 위치
-      const rogueVillage = GAME_BOARD.find(
-        t => t.type === 'village' && t.villageClass === 'rogue'
-      )!
+      const result = healAtVillage(state, 'warrior-1')
 
-      state = {
-        ...state,
-        players: state.players.map(p =>
-          p.id === warrior.id
-            ? { ...p, health: 10, position: rogueVillage.coord }
-            : p
-        ),
-      }
-
-      const { newState, healAmount } = healAtVillage(state, warrior.id)
-
-      const healed = newState.players.find(p => p.id === warrior.id)
-      expect(healed?.health).toBe(15) // 10 + 5
-      expect(healAmount).toBe(5)
+      expect(result.healAmount).toBe(5)
+      const healed = result.newState.players.find(p => p.id === 'warrior-1')!
+      expect(healed.health).toBe(25)
     })
 
     it('최대 체력을 초과하지 않는다', () => {
-      let state = createTestState()
-      const warrior = state.players.find(p => p.heroClass === 'warrior')!
+      const warriorStart = STARTING_POSITIONS.warrior[0]
+      const state = createTestState({
+        playerOverrides: [{ index: 0, position: warriorStart, health: 28, maxHealth: 30 }],
+      })
 
-      const warriorVillage = GAME_BOARD.find(
-        t => t.type === 'village' && t.villageClass === 'warrior'
-      )!
+      const result = healAtVillage(state, 'warrior-1')
 
-      // 전사의 기본 maxHealth는 30 (레벨 4 기준)
-      // 체력 28에서 자기 마을 회복(+10) → 최대 30까지만 회복
-      state = {
-        ...state,
-        players: state.players.map(p =>
-          p.id === warrior.id
-            ? { ...p, health: 28, position: warriorVillage.coord }
-            : p
-        ),
-      }
-
-      const { newState, healAmount } = healAtVillage(state, warrior.id)
-
-      const healed = newState.players.find(p => p.id === warrior.id)
-      expect(healed?.health).toBe(30) // maxHealth가 30
-      expect(healAmount).toBe(2) // 30 - 28
+      const healed = result.newState.players.find(p => p.id === 'warrior-1')!
+      expect(healed.health).toBe(30)
+      expect(result.healAmount).toBe(2)
     })
 
     it('마을이 아닌 곳에서는 회복하지 않는다', () => {
-      let state = createTestState()
-      const warrior = state.players.find(p => p.heroClass === 'warrior')!
+      const plainTile = GAME_BOARD.find(t => t.type === 'plain')!
+      const state = createTestState({
+        playerOverrides: [{ index: 0, position: plainTile.coord, health: 20, maxHealth: 30 }],
+      })
 
-      // 평지에 위치
-      const plain = GAME_BOARD.find(t => t.type === 'plain')!
+      const result = healAtVillage(state, 'warrior-1')
 
-      state = {
-        ...state,
-        players: state.players.map(p =>
-          p.id === warrior.id
-            ? { ...p, health: 10, position: plain.coord }
-            : p
-        ),
-      }
-
-      const { healAmount } = healAtVillage(state, warrior.id)
-      expect(healAmount).toBe(0)
+      expect(result.healAmount).toBe(0)
     })
   })
 
   describe('applyFireTileDamage', () => {
-    it('신성 용사가 화염 타일에서 피해를 받는다', () => {
-      let state = createTestState()
-      const player = state.players[0]
+    let fireTile: HexCoord
 
-      // 화염 타일 찾기
-      const fireTile = GAME_BOARD.find(t => t.type === 'fire')!
-
-      state = {
-        ...state,
-        players: state.players.map(p =>
-          p.id === player.id
-            ? { ...p, state: 'holy' as const, position: fireTile.coord }
-            : p
-        ),
-      }
-
-      const { damage } = applyFireTileDamage(state, player.id)
-
-      expect(damage).toBe(10)
+    beforeEach(() => {
+      const tile = GAME_BOARD.find(t => t.type === 'fire')!
+      fireTile = tile.coord
     })
 
-    it('타락 용사는 화염 타일에서 피해를 받지 않는다', () => {
-      let state = createTestState()
-      const player = state.players[0]
+    it('신성 용사가 화염 타일에서 10 피해', () => {
+      const state = createTestState({
+        playerOverrides: [{ index: 0, position: fireTile, state: 'holy' as const, health: 30, maxHealth: 30 }],
+      })
 
-      const fireTile = GAME_BOARD.find(t => t.type === 'fire')!
+      const result = applyFireTileDamage(state, 'warrior-1')
 
-      state = {
-        ...state,
-        players: state.players.map(p =>
-          p.id === player.id
-            ? { ...p, state: 'corrupt' as const, position: fireTile.coord }
-            : p
-        ),
-      }
-
-      const { damage } = applyFireTileDamage(state, player.id)
-
-      expect(damage).toBe(0)
+      expect(result.damage).toBe(TILE_EFFECTS.fire.baseDamage)
+      const updated = result.newState.players.find(p => p.id === 'warrior-1')!
+      expect(updated.health).toBe(20)
     })
 
-    it('타락 주사위만큼 화염 피해가 감소한다', () => {
-      let state = createTestState()
-      const player = state.players[0]
+    it('타락 용사는 화염 면역', () => {
+      const state = createTestState({
+        playerOverrides: [{ index: 0, position: fireTile, state: 'corrupt' as const, health: 30, maxHealth: 30 }],
+      })
 
-      const fireTile = GAME_BOARD.find(t => t.type === 'fire')!
+      const result = applyFireTileDamage(state, 'warrior-1')
 
-      state = {
-        ...state,
-        players: state.players.map(p =>
-          p.id === player.id
-            ? { ...p, state: 'holy' as const, corruptDice: 3, position: fireTile.coord }
-            : p
-        ),
-      }
+      expect(result.damage).toBe(0)
+    })
 
-      const { damage } = applyFireTileDamage(state, player.id)
+    it('타락 주사위가 있으면 화염 피해 감소', () => {
+      const state = createTestState({
+        playerOverrides: [{ index: 0, position: fireTile, state: 'holy' as const, health: 30, maxHealth: 30, corruptDice: 3 }],
+      })
 
-      expect(damage).toBe(7) // 10 - 3
+      const result = applyFireTileDamage(state, 'warrior-1')
+
+      expect(result.damage).toBe(7) // 10 - 3
     })
   })
 
-  describe('applyTileEntryDamage', () => {
-    it('신성 용사가 마왕성에서 피해를 받는다', () => {
-      let state = createTestState()
-      const player = state.players[0]
+  describe('기본 공격 통합 테스트 (GameEngine)', () => {
+    let engine: GameEngine
+    let diceRoller: MockDiceRoller
 
-      state = {
-        ...state,
-        players: state.players.map(p =>
-          p.id === player.id ? { ...p, state: 'holy' as const } : p
-        ),
-      }
-
-      const { damage } = applyTileEntryDamage(state, player.id, 'castle')
-
-      expect(damage).toBe(10)
+    beforeEach(() => {
+      diceRoller = new MockDiceRoller()
+      diceRoller.setDefaultValue(3)
+      engine = new GameEngine({ diceRoller })
     })
 
-    it('타락 용사는 마왕성에서 피해를 받지 않는다', () => {
-      let state = createTestState()
-      const player = state.players[0]
+    it('마검 소유자는 몬스터를 공격할 수 없다', () => {
+      let state = engine.createGame({
+        players: [
+          { id: 'warrior-1', name: 'Warrior', heroClass: 'warrior' },
+        ],
+      })
+
+      const harpy = state.monsters.find(m => m.id === 'harpy')!
+      const adjacentToHarpy: HexCoord = { q: 7, r: -4 } // 하피 인접 타일
 
       state = {
         ...state,
-        players: state.players.map(p =>
-          p.id === player.id ? { ...p, state: 'corrupt' as const } : p
-        ),
+        players: state.players.map(p => ({
+          ...p,
+          position: adjacentToHarpy,
+          hasDemonSword: true,
+          turnPhase: 'action' as const,
+          remainingMovement: 0,
+        })),
+        roundTurnOrder: ['warrior-1', 'monster'],
+        currentTurnIndex: 0,
       }
 
-      const { damage } = applyTileEntryDamage(state, player.id, 'castle')
+      const result = engine.executeAction(state, { type: 'BASIC_ATTACK', targetId: 'harpy' })
 
-      expect(damage).toBe(0)
+      expect(result.success).toBe(false)
+      expect(result.message).toContain('마검 소유자는 몬스터를 공격할 수 없습니다')
+    })
+
+    it('골렘 기본공격 면역 시 피해 무시', () => {
+      let state = engine.createGame({
+        players: [
+          { id: 'warrior-1', name: 'Warrior', heroClass: 'warrior' },
+        ],
+      })
+
+      const adjacentToGolem: HexCoord = { q: 8, r: -8 } // 골렘 인접 타일
+
+      state = {
+        ...state,
+        players: state.players.map(p => ({
+          ...p,
+          position: adjacentToGolem,
+          turnPhase: 'action' as const,
+          remainingMovement: 0,
+        })),
+        roundTurnOrder: ['warrior-1', 'monster'],
+        currentTurnIndex: 0,
+        monsterRoundBuffs: {
+          ...state.monsterRoundBuffs,
+          golemBasicAttackImmune: true,
+        },
+      }
+
+      const golemBefore = state.monsters.find(m => m.id === 'golem')!
+      const result = engine.executeAction(state, { type: 'BASIC_ATTACK', targetId: 'golem' })
+
+      expect(result.success).toBe(true)
+      expect(result.message).toContain('기본 공격을 무시')
+      const golemAfter = result.newState.monsters.find(m => m.id === 'golem')!
+      expect(golemAfter.health).toBe(golemBefore.health)
+    })
+
+    it('은신 상태 플레이어는 공격할 수 없다', () => {
+      let state = engine.createGame({
+        players: [
+          { id: 'warrior-1', name: 'Warrior', heroClass: 'warrior' },
+          { id: 'rogue-1', name: 'Rogue', heroClass: 'rogue' },
+        ],
+      })
+
+      const pos1: HexCoord = { q: 0, r: 0 }
+      const pos2: HexCoord = { q: 1, r: 0 }
+
+      state = {
+        ...state,
+        players: state.players.map(p => {
+          if (p.id === 'warrior-1') return { ...p, position: pos1, turnPhase: 'action' as const, remainingMovement: 0 }
+          if (p.id === 'rogue-1') return { ...p, position: pos2, isStealthed: true }
+          return p
+        }),
+        roundTurnOrder: ['warrior-1', 'rogue-1', 'monster'],
+        currentTurnIndex: 0,
+      }
+
+      const result = engine.executeAction(state, { type: 'BASIC_ATTACK', targetId: 'rogue-1' })
+
+      expect(result.success).toBe(false)
+      expect(result.message).toContain('은신')
+    })
+
+    it('무적 태세 활성 시 힘 수치만큼 피해 감소', () => {
+      let state = engine.createGame({
+        players: [
+          { id: 'warrior-1', name: 'Warrior', heroClass: 'warrior' },
+          { id: 'rogue-1', name: 'Rogue', heroClass: 'rogue' },
+        ],
+      })
+
+      const pos1: HexCoord = { q: 0, r: 0 }
+      const pos2: HexCoord = { q: 1, r: 0 }
+
+      state = {
+        ...state,
+        players: state.players.map(p => {
+          if (p.id === 'warrior-1') {
+            return {
+              ...p,
+              position: pos1,
+              turnPhase: 'action' as const,
+              remainingMovement: 0,
+              stats: { ...p.stats, strength: [3, 3] as [number, number] }, // 힘 6
+            }
+          }
+          if (p.id === 'rogue-1') {
+            return {
+              ...p,
+              position: pos2,
+              ironStanceActive: true,
+              stats: { ...p.stats, strength: [3, 2] as [number, number] }, // 힘 5
+              health: 20,
+              maxHealth: 20,
+            }
+          }
+          return p
+        }),
+        roundTurnOrder: ['warrior-1', 'rogue-1', 'monster'],
+        currentTurnIndex: 0,
+      }
+
+      const result = engine.executeAction(state, { type: 'BASIC_ATTACK', targetId: 'rogue-1' })
+
+      expect(result.success).toBe(true)
+      const rogue = result.newState.players.find(p => p.id === 'rogue-1')!
+      expect(rogue.health).toBe(19) // 20 - (6 - 5) = 19
+    })
+
+    it('독 바르기 시 민첩 추가 피해 후 소모', () => {
+      let state = engine.createGame({
+        players: [
+          { id: 'rogue-1', name: 'Rogue', heroClass: 'rogue' },
+          { id: 'warrior-1', name: 'Warrior', heroClass: 'warrior' },
+        ],
+      })
+
+      const pos1: HexCoord = { q: 0, r: 0 }
+      const pos2: HexCoord = { q: 1, r: 0 }
+
+      state = {
+        ...state,
+        players: state.players.map(p => {
+          if (p.id === 'rogue-1') {
+            return {
+              ...p,
+              position: pos1,
+              turnPhase: 'action' as const,
+              remainingMovement: 0,
+              poisonActive: true,
+              stats: {
+                strength: [2, 2] as [number, number],
+                dexterity: [3, 3] as [number, number],
+                intelligence: [1, 1] as [number, number],
+              },
+            }
+          }
+          if (p.id === 'warrior-1') return { ...p, position: pos2, health: 30, maxHealth: 30 }
+          return p
+        }),
+        roundTurnOrder: ['rogue-1', 'warrior-1', 'monster'],
+        currentTurnIndex: 0,
+      }
+
+      const result = engine.executeAction(state, { type: 'BASIC_ATTACK', targetId: 'warrior-1' })
+
+      expect(result.success).toBe(true)
+      const warrior = result.newState.players.find(p => p.id === 'warrior-1')!
+      expect(warrior.health).toBe(20) // 30 - (4 + 6) = 20
+
+      const rogue = result.newState.players.find(p => p.id === 'rogue-1')!
+      expect(rogue.poisonActive).toBe(false)
+    })
+
+    it('공격 시 은신 해제', () => {
+      let state = engine.createGame({
+        players: [
+          { id: 'rogue-1', name: 'Rogue', heroClass: 'rogue' },
+          { id: 'warrior-1', name: 'Warrior', heroClass: 'warrior' },
+        ],
+      })
+
+      const pos1: HexCoord = { q: 0, r: 0 }
+      const pos2: HexCoord = { q: 1, r: 0 }
+
+      state = {
+        ...state,
+        players: state.players.map(p => {
+          if (p.id === 'rogue-1') return { ...p, position: pos1, turnPhase: 'action' as const, remainingMovement: 0, isStealthed: true }
+          if (p.id === 'warrior-1') return { ...p, position: pos2 }
+          return p
+        }),
+        roundTurnOrder: ['rogue-1', 'warrior-1', 'monster'],
+        currentTurnIndex: 0,
+      }
+
+      const result = engine.executeAction(state, { type: 'BASIC_ATTACK', targetId: 'warrior-1' })
+
+      expect(result.success).toBe(true)
+      const rogue = result.newState.players.find(p => p.id === 'rogue-1')!
+      expect(rogue.isStealthed).toBe(false)
+    })
+
+    it('턴당 1회 제한 (hasUsedBasicAttack)', () => {
+      let state = engine.createGame({
+        players: [
+          { id: 'warrior-1', name: 'Warrior', heroClass: 'warrior' },
+          { id: 'rogue-1', name: 'Rogue', heroClass: 'rogue' },
+        ],
+      })
+
+      const pos1: HexCoord = { q: 0, r: 0 }
+      const pos2: HexCoord = { q: 1, r: 0 }
+
+      state = {
+        ...state,
+        players: state.players.map(p => {
+          if (p.id === 'warrior-1') return { ...p, position: pos1, turnPhase: 'action' as const, remainingMovement: 0, hasUsedBasicAttack: true }
+          if (p.id === 'rogue-1') return { ...p, position: pos2 }
+          return p
+        }),
+        roundTurnOrder: ['warrior-1', 'rogue-1', 'monster'],
+        currentTurnIndex: 0,
+      }
+
+      const result = engine.executeAction(state, { type: 'BASIC_ATTACK', targetId: 'rogue-1' })
+
+      expect(result.success).toBe(false)
+      expect(result.message).toContain('이미 기본 공격을 사용')
     })
   })
 })

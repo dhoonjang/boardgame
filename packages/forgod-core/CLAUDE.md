@@ -270,7 +270,7 @@ TERRAIN_MOVEMENT_COST = {
   temple: 3,     // 신전
   castle: 3,     // 마왕성
   monster: 'blocked',   // 몬스터 타일 (이동 불가)
-  hill: 'all',          // 언덕 (남은 이동력 전부 소모)
+  hill: 'all',          // 언덕 (남은 이동력 전부 소모, 최소 3 필요)
   mountain: 'blocked',  // 산 (이동 불가)
   lake: 'blocked',      // 호수 (이동 불가)
 }

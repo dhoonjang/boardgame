@@ -1,464 +1,464 @@
 import { describe, it, expect } from 'vitest'
 import { canUseSkill, useSkill } from '../engine/skills'
 import { GameEngine } from '../engine/game-engine'
-import type { GameState, Player } from '../types'
+import type { GameState, Player, HexCoord } from '../types'
+import { ALL_SKILLS } from '../constants'
+import { MockDiceRoller } from './test-helpers'
 
-function createTestState(): GameState {
-  const engine = new GameEngine()
-  return engine.createGame({
+/**
+ * 스킬 테스트용 상태 생성 헬퍼
+ */
+function createSkillTestState(options?: {
+  heroClass?: 'warrior' | 'rogue' | 'mage'
+  stats?: Partial<Player['stats']>
+  playerPosition?: HexCoord
+  targetPosition?: HexCoord
+  targetOverrides?: Partial<Player>
+}): GameState {
+  const diceRoller = new MockDiceRoller()
+  diceRoller.setDefaultValue(3)
+  const engine = new GameEngine({ diceRoller })
+
+  const mainClass = options?.heroClass ?? 'warrior'
+  const otherClass = mainClass === 'warrior' ? 'rogue' : 'warrior'
+
+  let state = engine.createGame({
     players: [
-      { id: 'warrior-1', name: 'Warrior', heroClass: 'warrior' },
-      { id: 'rogue-1', name: 'Rogue', heroClass: 'rogue' },
-      { id: 'mage-1', name: 'Mage', heroClass: 'mage' },
+      { id: 'player-1', name: 'Player1', heroClass: mainClass },
+      { id: 'target-1', name: 'Target', heroClass: otherClass as any },
+      { id: 'extra-1', name: 'Extra', heroClass: 'mage' },
     ],
   })
-}
 
-function setPlayerAsCurrentTurn(state: GameState, playerId: string): GameState {
-  const playerIndex = state.roundTurnOrder.indexOf(playerId)
-  return {
+  const pos = options?.playerPosition ?? { q: 0, r: 0 }
+  const targetPos = options?.targetPosition ?? { q: 1, r: 0 }
+
+  state = {
     ...state,
-    currentTurnIndex: playerIndex >= 0 ? playerIndex : 0,
+    players: state.players.map(p => {
+      if (p.id === 'player-1') {
+        return {
+          ...p,
+          position: pos,
+          turnPhase: 'action' as const,
+          remainingMovement: 0,
+          stats: {
+            strength: options?.stats?.strength ?? [3, 3] as [number, number],
+            dexterity: options?.stats?.dexterity ?? [3, 3] as [number, number],
+            intelligence: options?.stats?.intelligence ?? [5, 5] as [number, number],
+          },
+        }
+      }
+      if (p.id === 'target-1') {
+        return {
+          ...p,
+          position: targetPos,
+          health: 30,
+          maxHealth: 30,
+          ...(options?.targetOverrides ?? {}),
+        }
+      }
+      return p
+    }),
+    roundTurnOrder: ['player-1', 'target-1', 'extra-1', 'monster'],
+    currentTurnIndex: 0,
   }
+
+  return state
 }
 
-describe('skills', () => {
+describe('스킬 시스템', () => {
   describe('canUseSkill', () => {
-    it('존재하지 않는 스킬은 사용 불가', () => {
-      const state = createTestState()
-      const player = state.players.find(p => p.heroClass === 'warrior')!
-
-      const result = canUseSkill(state, player, 'non-existent-skill')
+    it('존재하지 않는 스킬 불가', () => {
+      const state = createSkillTestState()
+      const player = state.players[0]
+      const result = canUseSkill(state, player, 'nonexistent-skill')
       expect(result.canUse).toBe(false)
       expect(result.reason).toContain('존재하지 않는')
     })
 
-    it('다른 직업의 스킬은 사용 불가', () => {
-      const state = createTestState()
-      const warrior = state.players.find(p => p.heroClass === 'warrior')!
-
-      // 도적 스킬을 전사가 사용 시도
-      const result = canUseSkill(state, warrior, 'rogue-poison')
+    it('다른 직업 스킬 불가', () => {
+      const state = createSkillTestState({ heroClass: 'warrior' })
+      const player = state.players.find(p => p.id === 'player-1')!
+      const result = canUseSkill(state, player, 'rogue-stealth')
       expect(result.canUse).toBe(false)
-      expect(result.reason).toContain('해당 직업의 스킬이 아닙니다')
+      expect(result.reason).toContain('직업')
     })
 
-    it('쿨다운 중인 스킬은 사용 불가', () => {
-      let state = createTestState()
-      const warrior = state.players.find(p => p.heroClass === 'warrior')!
-
-      // 스킬에 쿨다운 설정
+    it('쿨다운 중 불가', () => {
+      let state = createSkillTestState({ heroClass: 'warrior' })
       state = {
         ...state,
         players: state.players.map(p =>
-          p.id === warrior.id
+          p.id === 'player-1'
             ? { ...p, skillCooldowns: { 'warrior-charge': 2 } }
             : p
         ),
       }
-
-      const updatedWarrior = state.players.find(p => p.id === warrior.id)!
-      const result = canUseSkill(state, updatedWarrior, 'warrior-charge')
+      const player = state.players.find(p => p.id === 'player-1')!
+      const result = canUseSkill(state, player, 'warrior-charge')
       expect(result.canUse).toBe(false)
       expect(result.reason).toContain('재사용 대기')
     })
 
-    it('비용이 부족하면 사용 불가', () => {
-      let state = createTestState()
-      const warrior = state.players.find(p => p.heroClass === 'warrior')!
-
-      // 이미 스킬 비용을 많이 사용한 상태
-      state = {
-        ...state,
-        players: state.players.map(p =>
-          p.id === warrior.id
-            ? { ...p, usedSkillCost: 2 } // 지능 2 중 2 사용
-            : p
-        ),
-      }
-
-      const updatedWarrior = state.players.find(p => p.id === warrior.id)!
-      // warrior-charge 비용은 1
-      const result = canUseSkill(state, updatedWarrior, 'warrior-charge')
+    it('비용 부족 시 불가', () => {
+      const state = createSkillTestState({
+        heroClass: 'warrior',
+        stats: { intelligence: [1, 1] as [number, number] },
+      })
+      const player = state.players.find(p => p.id === 'player-1')!
+      // warrior-sword-wave costs 3, intelligence is 2
+      const result = canUseSkill(state, player, 'warrior-sword-wave')
       expect(result.canUse).toBe(false)
-      expect(result.reason).toContain('스킬 비용이 부족')
+      expect(result.reason).toContain('비용')
     })
 
-    it('조건을 충족하면 사용 가능', () => {
-      const state = createTestState()
-      const warrior = state.players.find(p => p.heroClass === 'warrior')!
-
-      const result = canUseSkill(state, warrior, 'warrior-charge')
-      expect(result.canUse).toBe(true)
+    it('몬스터 턴에 불가', () => {
+      let state = createSkillTestState()
+      state = {
+        ...state,
+        currentTurnIndex: state.roundTurnOrder.length - 1,
+      }
+      const result = useSkill(state, 'warrior-charge', 'target-1')
+      expect(result.success).toBe(false)
+      expect(result.message).toContain('몬스터 턴')
     })
   })
 
-  describe('useSkill - 전사', () => {
-    describe('warrior-charge (돌진)', () => {
-      it('대상을 지정하지 않으면 실패', () => {
-        let state = createTestState()
-        state = setPlayerAsCurrentTurn(state, 'warrior-1')
-
-        const result = useSkill(state, 'warrior-charge')
-        expect(result.success).toBe(false)
-        expect(result.message).toContain('대상')
+  describe('전사 스킬', () => {
+    describe('돌진 (warrior-charge)', () => {
+      it('2칸 떨어진 대상에게 돌진', () => {
+        const state = createSkillTestState({
+          heroClass: 'warrior',
+          playerPosition: { q: 0, r: 0 },
+          targetPosition: { q: 2, r: 0 },
+        })
+        const result = useSkill(state, 'warrior-charge', 'target-1')
+        expect(result.success).toBe(true)
+        expect(result.events.some(e => e.type === 'PLAYER_MOVED')).toBe(true)
       })
 
-      it('2칸 떨어진 대상에게 돌진할 수 있다', () => {
-        let state = createTestState()
-        state = setPlayerAsCurrentTurn(state, 'warrior-1')
-        const warrior = state.players.find(p => p.id === 'warrior-1')!
-
-        // 도적을 2칸 거리에 배치
-        const targetPosition = { q: warrior.position.q + 2, r: warrior.position.r }
-        state = {
-          ...state,
-          players: state.players.map(p =>
-            p.id === 'rogue-1' ? { ...p, position: targetPosition } : p
-          ),
-        }
-
-        const result = useSkill(state, 'warrior-charge', 'rogue-1')
-
-        // 테스트 환경에서는 타일이 없을 수 있어 실패할 수 있음
-        // 성공하면 이동 이벤트가 있어야 함
-        if (result.success) {
-          expect(result.events).toContainEqual(
-            expect.objectContaining({ type: 'PLAYER_MOVED' })
-          )
-        }
-      })
-
-      it('2칸 떨어지지 않은 대상에게는 실패', () => {
-        let state = createTestState()
-        state = setPlayerAsCurrentTurn(state, 'warrior-1')
-        const warrior = state.players.find(p => p.id === 'warrior-1')!
-
-        // 도적을 1칸 거리에 배치
-        const targetPosition = { q: warrior.position.q + 1, r: warrior.position.r }
-        state = {
-          ...state,
-          players: state.players.map(p =>
-            p.id === 'rogue-1' ? { ...p, position: targetPosition } : p
-          ),
-        }
-
-        const result = useSkill(state, 'warrior-charge', 'rogue-1')
+      it('1칸 대상은 실패', () => {
+        const state = createSkillTestState({
+          heroClass: 'warrior',
+          playerPosition: { q: 0, r: 0 },
+          targetPosition: { q: 1, r: 0 },
+        })
+        const result = useSkill(state, 'warrior-charge', 'target-1')
         expect(result.success).toBe(false)
         expect(result.message).toContain('2칸')
       })
-    })
 
-    describe('warrior-power-strike (일격 필살)', () => {
-      it('인접한 대상에게 힘x2 피해를 준다', () => {
-        let state = createTestState()
-        state = setPlayerAsCurrentTurn(state, 'warrior-1')
-        const warrior = state.players.find(p => p.id === 'warrior-1')!
+      it('3칸 대상은 실패', () => {
+        const state = createSkillTestState({
+          heroClass: 'warrior',
+          playerPosition: { q: 0, r: 0 },
+          targetPosition: { q: 3, r: 0 },
+        })
+        const result = useSkill(state, 'warrior-charge', 'target-1')
+        expect(result.success).toBe(false)
+        expect(result.message).toContain('2칸')
+      })
 
-        // 도적을 인접하게 배치
-        const targetPosition = { q: warrior.position.q + 1, r: warrior.position.r }
+      it('돌진 후 원하는 스킬 쿨 1 감소', () => {
+        let state = createSkillTestState({
+          heroClass: 'warrior',
+          playerPosition: { q: 0, r: 0 },
+          targetPosition: { q: 2, r: 0 },
+        })
+        // 미리 쿨다운 설정
         state = {
           ...state,
           players: state.players.map(p =>
-            p.id === 'rogue-1' ? { ...p, position: targetPosition } : p
+            p.id === 'player-1'
+              ? { ...p, skillCooldowns: { 'warrior-power-strike': 3 } }
+              : p
           ),
         }
-
-        const result = useSkill(state, 'warrior-power-strike', 'rogue-1')
-
+        const result = useSkill(state, 'warrior-charge', 'target-1')
         expect(result.success).toBe(true)
-        expect(result.events).toContainEqual(
-          expect.objectContaining({
-            type: 'PLAYER_ATTACKED',
-            damage: 4, // 힘 (1+1) x 2 = 4
-          })
-        )
+        const player = result.newState.players.find(p => p.id === 'player-1')!
+        expect(player.skillCooldowns['warrior-power-strike']).toBe(2)
+      })
+    })
+
+    describe('일격 필살 (warrior-power-strike)', () => {
+      it('인접 대상에게 힘x2 피해', () => {
+        const state = createSkillTestState({
+          heroClass: 'warrior',
+          stats: { strength: [3, 3] as [number, number] },
+          playerPosition: { q: 0, r: 0 },
+          targetPosition: { q: 1, r: 0 },
+        })
+        const result = useSkill(state, 'warrior-power-strike', 'target-1')
+        expect(result.success).toBe(true)
+        const target = result.newState.players.find(p => p.id === 'target-1')!
+        expect(target.health).toBe(30 - 12) // 힘 6 * 2 = 12
       })
 
-      it('인접하지 않은 대상에게는 실패', () => {
-        let state = createTestState()
-        state = setPlayerAsCurrentTurn(state, 'warrior-1')
-
-        const result = useSkill(state, 'warrior-power-strike', 'rogue-1')
+      it('비인접 실패', () => {
+        const state = createSkillTestState({
+          heroClass: 'warrior',
+          playerPosition: { q: 0, r: 0 },
+          targetPosition: { q: 2, r: 0 },
+        })
+        const result = useSkill(state, 'warrior-power-strike', 'target-1')
         expect(result.success).toBe(false)
         expect(result.message).toContain('인접')
       })
     })
 
-    describe('warrior-iron-stance (무적 태세)', () => {
-      it('스킬 사용에 성공한다', () => {
-        let state = createTestState()
-        state = setPlayerAsCurrentTurn(state, 'warrior-1')
-
+    describe('무적 태세 (warrior-iron-stance)', () => {
+      it('ironStanceActive가 true로 설정됨', () => {
+        const state = createSkillTestState({ heroClass: 'warrior' })
         const result = useSkill(state, 'warrior-iron-stance')
         expect(result.success).toBe(true)
-        expect(result.message).toContain('무적 태세')
+        const player = result.newState.players.find(p => p.id === 'player-1')!
+        expect(player.ironStanceActive).toBe(true)
+      })
+    })
+
+    describe('검기 발사 (warrior-sword-wave)', () => {
+      it('방향 3칸에 힘 피해', () => {
+        const state = createSkillTestState({
+          heroClass: 'warrior',
+          stats: { strength: [3, 3] as [number, number] },
+          playerPosition: { q: 0, r: 0 },
+          targetPosition: { q: 1, r: 0 },
+        })
+        const result = useSkill(state, 'warrior-sword-wave', undefined, { q: 1, r: 0 })
+        expect(result.success).toBe(true)
+        const target = result.newState.players.find(p => p.id === 'target-1')!
+        expect(target.health).toBe(30 - 6)
       })
     })
   })
 
-  describe('useSkill - 도적', () => {
-    describe('rogue-poison (독 바르기)', () => {
-      it('스킬 사용에 성공한다', () => {
-        let state = createTestState()
-        state = setPlayerAsCurrentTurn(state, 'rogue-1')
-
+  describe('도적 스킬', () => {
+    describe('독 바르기 (rogue-poison)', () => {
+      it('poisonActive가 true로 설정됨', () => {
+        const state = createSkillTestState({ heroClass: 'rogue' })
         const result = useSkill(state, 'rogue-poison')
         expect(result.success).toBe(true)
-        expect(result.message).toContain('독 바르기')
+        const player = result.newState.players.find(p => p.id === 'player-1')!
+        expect(player.poisonActive).toBe(true)
       })
     })
 
-    describe('rogue-shadow-trap (그림자 함정)', () => {
-      it('스킬 사용에 성공한다', () => {
-        let state = createTestState()
-        state = setPlayerAsCurrentTurn(state, 'rogue-1')
-
+    describe('그림자 함정 (rogue-shadow-trap)', () => {
+      it('현재 위치에 함정 설치', () => {
+        const state = createSkillTestState({
+          heroClass: 'rogue',
+          playerPosition: { q: 0, r: 0 },
+        })
         const result = useSkill(state, 'rogue-shadow-trap')
         expect(result.success).toBe(true)
-        expect(result.message).toContain('함정')
+        const player = result.newState.players.find(p => p.id === 'player-1')!
+        expect(player.traps).toHaveLength(1)
+        expect(player.traps[0]).toEqual({ q: 0, r: 0 })
+      })
+
+      it('최대 3개 초과 시 가장 오래된 것 제거', () => {
+        let state = createSkillTestState({ heroClass: 'rogue' })
+        state = {
+          ...state,
+          players: state.players.map(p =>
+            p.id === 'player-1'
+              ? { ...p, traps: [{ q: 1, r: 0 }, { q: 2, r: 0 }, { q: 3, r: 0 }] }
+              : p
+          ),
+        }
+        const result = useSkill(state, 'rogue-shadow-trap')
+        expect(result.success).toBe(true)
+        const player = result.newState.players.find(p => p.id === 'player-1')!
+        expect(player.traps).toHaveLength(3)
+        expect(player.traps[0]).toEqual({ q: 2, r: 0 })
       })
     })
 
-    describe('rogue-stealth (은신)', () => {
-      it('스킬 사용에 성공한다', () => {
-        let state = createTestState()
-        state = setPlayerAsCurrentTurn(state, 'rogue-1')
-
+    describe('은신 (rogue-stealth)', () => {
+      it('isStealthed가 true로 설정됨', () => {
+        const state = createSkillTestState({ heroClass: 'rogue' })
         const result = useSkill(state, 'rogue-stealth')
         expect(result.success).toBe(true)
-        expect(result.message).toContain('은신')
+        const player = result.newState.players.find(p => p.id === 'player-1')!
+        expect(player.isStealthed).toBe(true)
       })
     })
 
-    describe('rogue-backstab (배후 일격)', () => {
+    describe('배후 일격 (rogue-backstab)', () => {
       it('대상을 지정하지 않으면 실패', () => {
-        let state = createTestState()
-        state = setPlayerAsCurrentTurn(state, 'rogue-1')
-
+        const state = createSkillTestState({ heroClass: 'rogue' })
         const result = useSkill(state, 'rogue-backstab')
         expect(result.success).toBe(false)
         expect(result.message).toContain('대상')
       })
     })
 
-    describe('rogue-shuriken (무한의 표창)', () => {
-      it('방향을 지정하지 않으면 실패', () => {
-        let state = createTestState()
-        state = setPlayerAsCurrentTurn(state, 'rogue-1')
+    describe('무한의 표창 (rogue-shuriken)', () => {
+      it('일직선 첫 대상에 민첩 피해', () => {
+        const state = createSkillTestState({
+          heroClass: 'rogue',
+          stats: { dexterity: [3, 3] as [number, number] },
+          playerPosition: { q: 0, r: 0 },
+          targetPosition: { q: 1, r: 0 },
+        })
+        const result = useSkill(state, 'rogue-shuriken', undefined, { q: 1, r: 0 })
+        expect(result.success).toBe(true)
+        const target = result.newState.players.find(p => p.id === 'target-1')!
+        expect(target.health).toBe(30 - 6) // 1칸이므로 민첩 x1
+      })
 
-        // 지능을 높여서 비용 검사 통과
-        state = {
-          ...state,
-          players: state.players.map(p =>
-            p.id === 'rogue-1'
-              ? { ...p, stats: { ...p.stats, intelligence: [3, 3] as [number, number] } }
-              : p
-          ),
-        }
-
-        const result = useSkill(state, 'rogue-shuriken')
-        expect(result.success).toBe(false)
-        expect(result.message).toContain('방향')
+      it('2칸 이상이면 민첩x2 피해', () => {
+        const state = createSkillTestState({
+          heroClass: 'rogue',
+          stats: { dexterity: [3, 3] as [number, number] },
+          playerPosition: { q: 0, r: 0 },
+          targetPosition: { q: 2, r: 0 },
+        })
+        const result = useSkill(state, 'rogue-shuriken', undefined, { q: 1, r: 0 })
+        expect(result.success).toBe(true)
+        const target = result.newState.players.find(p => p.id === 'target-1')!
+        expect(target.health).toBe(30 - 12) // 2칸이므로 민첩 x2
       })
     })
   })
 
-  describe('useSkill - 법사', () => {
-    describe('mage-enhance (스킬 강화)', () => {
-      it('스킬 사용에 성공한다', () => {
-        let state = createTestState()
-        state = setPlayerAsCurrentTurn(state, 'mage-1')
-
+  describe('법사 스킬', () => {
+    describe('스킬 강화 (mage-enhance)', () => {
+      it('isEnhanced가 true로 설정됨', () => {
+        const state = createSkillTestState({ heroClass: 'mage' })
         const result = useSkill(state, 'mage-enhance')
         expect(result.success).toBe(true)
-        expect(result.message).toContain('스킬 강화')
+        const player = result.newState.players.find(p => p.id === 'player-1')!
+        expect(player.isEnhanced).toBe(true)
       })
     })
 
-    describe('mage-clone (분신)', () => {
-      it('스킬 사용에 성공한다', () => {
-        let state = createTestState()
-        state = setPlayerAsCurrentTurn(state, 'mage-1')
+    describe('마법 화살 (mage-magic-arrow)', () => {
+      it('사거리 2 내 대상에 지능 피해', () => {
+        const state = createSkillTestState({
+          heroClass: 'mage',
+          stats: { intelligence: [4, 4] as [number, number] },
+          playerPosition: { q: 0, r: 0 },
+          targetPosition: { q: 2, r: 0 },
+        })
+        const result = useSkill(state, 'mage-magic-arrow', 'target-1')
+        expect(result.success).toBe(true)
+        const target = result.newState.players.find(p => p.id === 'target-1')!
+        expect(target.health).toBe(30 - 8)
+      })
 
+      it('3칸 이상 실패 (용사 대상)', () => {
+        const state = createSkillTestState({
+          heroClass: 'mage',
+          playerPosition: { q: 0, r: 0 },
+          targetPosition: { q: 3, r: 0 },
+        })
+        const result = useSkill(state, 'mage-magic-arrow', 'target-1')
+        expect(result.success).toBe(false)
+      })
+    })
+
+    describe('분신 (mage-clone)', () => {
+      it('현재 위치에 분신 생성', () => {
+        const state = createSkillTestState({
+          heroClass: 'mage',
+          playerPosition: { q: 0, r: 0 },
+        })
         const result = useSkill(state, 'mage-clone')
         expect(result.success).toBe(true)
-        expect(result.message).toContain('분신')
+        expect(result.newState.clones).toContainEqual({
+          playerId: 'player-1',
+          position: { q: 0, r: 0 },
+        })
       })
     })
 
-    describe('mage-burst (마력 방출)', () => {
-      it('주변 대상에게 피해를 준다', () => {
-        let state = createTestState()
-        state = setPlayerAsCurrentTurn(state, 'mage-1')
-        const mage = state.players.find(p => p.id === 'mage-1')!
-
-        // 전사를 인접하게 배치하고 지능을 높여서 비용 검사 통과
-        const targetPosition = { q: mage.position.q + 1, r: mage.position.r }
-        state = {
-          ...state,
-          players: state.players.map(p => {
-            if (p.id === 'warrior-1') {
-              return { ...p, position: targetPosition }
-            }
-            if (p.id === 'mage-1') {
-              return { ...p, stats: { ...p.stats, intelligence: [3, 3] as [number, number] } }
-            }
-            return p
-          }),
-        }
-
+    describe('마력 방출 (mage-burst)', () => {
+      it('주변 1칸에 지능 피해', () => {
+        const state = createSkillTestState({
+          heroClass: 'mage',
+          stats: { intelligence: [4, 4] as [number, number] },
+          playerPosition: { q: 0, r: 0 },
+          targetPosition: { q: 1, r: 0 },
+        })
         const result = useSkill(state, 'mage-burst')
         expect(result.success).toBe(true)
-        expect(result.events).toContainEqual(
-          expect.objectContaining({
-            type: 'PLAYER_ATTACKED',
-            damage: 6, // 지능 3+3 = 6
-          })
-        )
+        const target = result.newState.players.find(p => p.id === 'target-1')!
+        expect(target.health).toBe(30 - 8)
       })
     })
 
-    describe('mage-magic-arrow (마법 화살)', () => {
-      it('대상을 지정하지 않으면 실패', () => {
-        let state = createTestState()
-        state = setPlayerAsCurrentTurn(state, 'mage-1')
-
-        const result = useSkill(state, 'mage-magic-arrow')
-        expect(result.success).toBe(false)
-        expect(result.message).toContain('대상')
-      })
-
-      it('2칸 이내의 용사를 공격할 수 있다', () => {
-        let state = createTestState()
-        state = setPlayerAsCurrentTurn(state, 'mage-1')
-        const mage = state.players.find(p => p.id === 'mage-1')!
-
-        // 전사를 2칸 거리에 배치
-        const targetPosition = { q: mage.position.q + 2, r: mage.position.r }
-        state = {
-          ...state,
-          players: state.players.map(p =>
-            p.id === 'warrior-1' ? { ...p, position: targetPosition } : p
-          ),
-        }
-
-        const result = useSkill(state, 'mage-magic-arrow', 'warrior-1')
+    describe('메테오 (mage-meteor)', () => {
+      it('지정 위치에 지능 피해', () => {
+        const state = createSkillTestState({
+          heroClass: 'mage',
+          stats: { intelligence: [4, 4] as [number, number] },
+          targetPosition: { q: 5, r: 0 },
+        })
+        const result = useSkill(state, 'mage-meteor', undefined, { q: 5, r: 0 })
         expect(result.success).toBe(true)
-        expect(result.events).toContainEqual(
-          expect.objectContaining({ type: 'PLAYER_ATTACKED' })
-        )
+        const target = result.newState.players.find(p => p.id === 'target-1')!
+        expect(target.health).toBe(30 - 8)
       })
 
-      it('3칸 이상의 용사는 공격 불가', () => {
-        let state = createTestState()
-        state = setPlayerAsCurrentTurn(state, 'mage-1')
-        const mage = state.players.find(p => p.id === 'mage-1')!
-
-        // 전사를 3칸 거리에 배치
-        const targetPosition = { q: mage.position.q + 3, r: mage.position.r }
-        state = {
+      it('메테오 면역 시 몬스터에 피해 없음', () => {
+        const state = createSkillTestState({
+          heroClass: 'mage',
+          stats: { intelligence: [4, 4] as [number, number] },
+        })
+        const harpy = state.monsters.find(m => m.id === 'harpy')!
+        const modifiedState = {
           ...state,
-          players: state.players.map(p =>
-            p.id === 'warrior-1' ? { ...p, position: targetPosition } : p
-          ),
+          monsterRoundBuffs: { ...state.monsterRoundBuffs, meteorImmune: true },
         }
-
-        const result = useSkill(state, 'mage-magic-arrow', 'warrior-1')
-        expect(result.success).toBe(false)
-      })
-    })
-
-    describe('mage-meteor (메테오)', () => {
-      it('위치를 지정하지 않으면 실패', () => {
-        let state = createTestState()
-        state = setPlayerAsCurrentTurn(state, 'mage-1')
-
-        // 지능을 높여서 비용 검사 통과 (메테오 비용 4)
-        state = {
-          ...state,
-          players: state.players.map(p =>
-            p.id === 'mage-1'
-              ? { ...p, stats: { ...p.stats, intelligence: [3, 3] as [number, number] } }
-              : p
-          ),
-        }
-
-        const result = useSkill(state, 'mage-meteor')
-        expect(result.success).toBe(false)
-        expect(result.message).toContain('위치')
-      })
-
-      it('지정한 위치에 피해를 준다', () => {
-        let state = createTestState()
-        state = setPlayerAsCurrentTurn(state, 'mage-1')
-
-        // 지능을 높여서 비용 검사 통과 (메테오 비용 4)
-        state = {
-          ...state,
-          players: state.players.map(p =>
-            p.id === 'mage-1'
-              ? { ...p, stats: { ...p.stats, intelligence: [3, 3] as [number, number] } }
-              : p
-          ),
-        }
-
-        const targetPosition = { q: 0, r: 0 } // 신전 위치
-
-        const result = useSkill(state, 'mage-meteor', undefined, targetPosition)
+        const result = useSkill(modifiedState, 'mage-meteor', undefined, harpy.position)
         expect(result.success).toBe(true)
-        expect(result.message).toContain('메테오')
+        const harpyAfter = result.newState.monsters.find(m => m.id === 'harpy')!
+        expect(harpyAfter.health).toBe(harpy.health)
+      })
+
+      it('강화 시 지능x2 피해', () => {
+        let state = createSkillTestState({
+          heroClass: 'mage',
+          stats: { intelligence: [4, 4] as [number, number] },
+          targetPosition: { q: 5, r: 0 },
+        })
+        state = {
+          ...state,
+          players: state.players.map(p =>
+            p.id === 'player-1' ? { ...p, isEnhanced: true } : p
+          ),
+        }
+        const result = useSkill(state, 'mage-meteor', undefined, { q: 5, r: 0 })
+        expect(result.success).toBe(true)
+        const target = result.newState.players.find(p => p.id === 'target-1')!
+        expect(target.health).toBe(30 - 16) // 지능 8 * 2 = 16
+        // 강화 소모 확인
+        const player = result.newState.players.find(p => p.id === 'player-1')!
+        expect(player.isEnhanced).toBe(false)
       })
     })
   })
 
-  describe('스킬 사용 후 상태 변화', () => {
-    it('스킬 사용 후 쿨다운이 적용된다', () => {
-      let state = createTestState()
-      state = setPlayerAsCurrentTurn(state, 'warrior-1')
-
+  describe('스킬 사용 후 상태', () => {
+    it('쿨다운 적용', () => {
+      const state = createSkillTestState({ heroClass: 'warrior' })
       const result = useSkill(state, 'warrior-iron-stance')
       expect(result.success).toBe(true)
-
-      const warrior = result.newState.players.find(p => p.id === 'warrior-1')
-      expect(warrior?.skillCooldowns['warrior-iron-stance']).toBe(3)
+      const player = result.newState.players.find(p => p.id === 'player-1')!
+      const skill = ALL_SKILLS.find(s => s.id === 'warrior-iron-stance')!
+      expect(player.skillCooldowns['warrior-iron-stance']).toBe(skill.cooldown)
     })
 
-    it('스킬 사용 후 비용이 누적된다', () => {
-      let state = createTestState()
-      state = setPlayerAsCurrentTurn(state, 'rogue-1')
-
-      // 지능을 높여서 여러 스킬을 사용할 수 있게 함
-      state = {
-        ...state,
-        players: state.players.map(p =>
-          p.id === 'rogue-1'
-            ? { ...p, stats: { ...p.stats, intelligence: [3, 3] as [number, number] } }
-            : p
-        ),
-      }
-
+    it('비용 누적', () => {
+      const state = createSkillTestState({ heroClass: 'rogue' })
       const result = useSkill(state, 'rogue-poison')
       expect(result.success).toBe(true)
-
-      const rogue = result.newState.players.find(p => p.id === 'rogue-1')
-      expect(rogue?.usedSkillCost).toBe(1) // 독 바르기 비용 1
-    })
-  })
-
-  describe('몬스터 턴에 스킬 사용 불가', () => {
-    it('몬스터 턴에는 스킬을 사용할 수 없다', () => {
-      let state = createTestState()
-
-      // 몬스터 턴으로 설정
-      state = {
-        ...state,
-        currentTurnIndex: state.roundTurnOrder.length - 1,
-      }
-
-      const result = useSkill(state, 'warrior-charge', 'rogue-1')
-      expect(result.success).toBe(false)
-      expect(result.message).toContain('몬스터 턴')
+      const player = result.newState.players.find(p => p.id === 'player-1')!
+      const skill = ALL_SKILLS.find(s => s.id === 'rogue-poison')!
+      expect(player.usedSkillCost).toBe(skill.cost)
     })
   })
 })

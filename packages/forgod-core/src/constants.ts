@@ -27,6 +27,7 @@ export const WARRIOR_SKILLS: Skill[] = [
     cost: 1,
     cooldown: 1,
     heroClass: 'warrior',
+    targetType: 'entity',
   },
   {
     id: 'warrior-power-strike',
@@ -35,6 +36,7 @@ export const WARRIOR_SKILLS: Skill[] = [
     cost: 2,
     cooldown: 3,
     heroClass: 'warrior',
+    targetType: 'entity',
   },
   {
     id: 'warrior-throw',
@@ -43,6 +45,7 @@ export const WARRIOR_SKILLS: Skill[] = [
     cost: 2,
     cooldown: 3,
     heroClass: 'warrior',
+    targetType: 'entity',
   },
   {
     id: 'warrior-iron-stance',
@@ -51,6 +54,7 @@ export const WARRIOR_SKILLS: Skill[] = [
     cost: 2,
     cooldown: 3,
     heroClass: 'warrior',
+    targetType: 'none',
   },
   {
     id: 'warrior-sword-wave',
@@ -59,6 +63,7 @@ export const WARRIOR_SKILLS: Skill[] = [
     cost: 3,
     cooldown: 3,
     heroClass: 'warrior',
+    targetType: 'position',
   },
 ]
 
@@ -71,6 +76,7 @@ export const ROGUE_SKILLS: Skill[] = [
     cost: 1,
     cooldown: 1,
     heroClass: 'rogue',
+    targetType: 'none',
   },
   {
     id: 'rogue-shadow-trap',
@@ -79,6 +85,7 @@ export const ROGUE_SKILLS: Skill[] = [
     cost: 1,
     cooldown: 2,
     heroClass: 'rogue',
+    targetType: 'none',
   },
   {
     id: 'rogue-backstab',
@@ -87,6 +94,7 @@ export const ROGUE_SKILLS: Skill[] = [
     cost: 2,
     cooldown: 2,
     heroClass: 'rogue',
+    targetType: 'entity',
   },
   {
     id: 'rogue-stealth',
@@ -95,6 +103,7 @@ export const ROGUE_SKILLS: Skill[] = [
     cost: 2,
     cooldown: 3,
     heroClass: 'rogue',
+    targetType: 'none',
   },
   {
     id: 'rogue-shuriken',
@@ -103,6 +112,7 @@ export const ROGUE_SKILLS: Skill[] = [
     cost: 3,
     cooldown: 3,
     heroClass: 'rogue',
+    targetType: 'position',
   },
 ]
 
@@ -115,6 +125,7 @@ export const MAGE_SKILLS: Skill[] = [
     cost: 2,
     cooldown: 0,
     heroClass: 'mage',
+    targetType: 'none',
   },
   {
     id: 'mage-magic-arrow',
@@ -123,6 +134,7 @@ export const MAGE_SKILLS: Skill[] = [
     cost: 2,
     cooldown: 1,
     heroClass: 'mage',
+    targetType: 'entity',
   },
   {
     id: 'mage-clone',
@@ -131,6 +143,7 @@ export const MAGE_SKILLS: Skill[] = [
     cost: 2,
     cooldown: 2,
     heroClass: 'mage',
+    targetType: 'none',
   },
   {
     id: 'mage-burst',
@@ -139,6 +152,7 @@ export const MAGE_SKILLS: Skill[] = [
     cost: 3,
     cooldown: 2,
     heroClass: 'mage',
+    targetType: 'none',
   },
   {
     id: 'mage-meteor',
@@ -147,6 +161,7 @@ export const MAGE_SKILLS: Skill[] = [
     cost: 4,
     cooldown: 3,
     heroClass: 'mage',
+    targetType: 'position',
   },
 ]
 
@@ -214,7 +229,7 @@ export const REVELATIONS: Revelation[] = [
     name: '천사의 가호',
     source: 'angel',
     task: '타락 상태 용사로부터 죽을만큼 피해를 받는다',
-    reward: { faithScore: 2, extraRevelations: 1 },  // 체력 모두 회복은 별도 처리
+    reward: { faithScore: 3 },  // 체력 1로 생존 + 신앙 3점 (별도 처리)
     isGameEnd: false,
   },
   {

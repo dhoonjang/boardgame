@@ -85,41 +85,41 @@ describe('4인 플레이어 경쟁 시나리오', () => {
     })
 
     it('P1이 P2를 공격하여 처치하면 타락한다', () => {
-      // P1과 P2가 서로 인접하도록 마검 위치를 설정 (P1 시작 위치 근처)
       let state = createFourPlayerGame()
 
-      // P2를 P1 인접 위치로 이동시키기 위해 여러 턴 진행
-      // 먼저 P2의 위치와 P1의 인접 타일 확인
+      // P2를 P1 인접의 비-마을 타일로 이동
       const p1 = state.players.find(p => p.id === 'warrior-1')!
-      const p2 = state.players.find(p => p.id === 'rogue-1')!
 
-      // P1 인접의 이동 가능한 타일 찾기
-      const p1AdjacentTiles = getNeighbors(p1.position).filter(pos => {
+      // P1 인접의 비-마을 이동 가능 타일 찾기 (마을 회복 방지)
+      const p1AdjacentNonVillage = getNeighbors(p1.position).filter(pos => {
         const tile = GAME_BOARD.find(t => t.coord.q === pos.q && t.coord.r === pos.r)
         if (!tile) return false
         const cost = TERRAIN_MOVEMENT_COST[tile.type]
-        return cost !== 'blocked'
+        return cost !== 'blocked' && tile.type !== 'village'
       })
 
-      // P2를 P1 인접 위치로 이동
-      if (p1AdjacentTiles.length > 0 && !coordEquals(p1AdjacentTiles[0], p2.position)) {
-        state = movePlayerToPosition(engine, state, 'rogue-1', p1AdjacentTiles[0])
+      // P2를 P1 인접 비-마을 위치로 직접 배치 (이동 대신 상태 직접 수정)
+      const targetPos = p1AdjacentNonVillage.length > 0
+        ? p1AdjacentNonVillage[0]
+        : getNeighbors(p1.position).filter(pos => {
+            const tile = GAME_BOARD.find(t => t.coord.q === pos.q && t.coord.r === pos.r)
+            return tile && TERRAIN_MOVEMENT_COST[tile.type] !== 'blocked'
+          })[0]
+
+      state = {
+        ...state,
+        players: state.players.map(p =>
+          p.id === 'rogue-1' ? { ...p, position: targetPos, health: 4 } : p  // 체력 낮게 설정 (2턴이면 처치)
+        ),
       }
 
       // P1의 턴으로 이동하고 P2 공격
       state = advanceToPlayerTurn(engine, state, 'warrior-1')
       state = skipToActionPhase(engine, state)
 
-      // P2 체력 확인
-      const p2Before = state.players.find(p => p.id === 'rogue-1')!
-      const p1Stats = state.players.find(p => p.id === 'warrior-1')!
-
-      // P1의 공격력 (힘 수치)
-      const p1Damage = p1Stats.stats.strength[0] + p1Stats.stats.strength[1]
-
       // 여러 번 공격하여 P2 처치
       let attackCount = 0
-      const maxAttacks = Math.ceil(p2Before.health / p1Damage) + 5 // 여유 있게
+      const maxAttacks = 10
 
       while (attackCount < maxAttacks) {
         const p2Current = state.players.find(p => p.id === 'rogue-1')!
@@ -156,33 +156,31 @@ describe('4인 플레이어 경쟁 시나리오', () => {
     it('이미 타락한 플레이어가 다른 용사를 처치하면 타락 주사위가 증가한다', () => {
       let state = createFourPlayerGame()
 
-      // P1과 P3를 인접하게 배치
       const p1 = state.players.find(p => p.id === 'warrior-1')!
-      const p3 = state.players.find(p => p.id === 'mage-1')!
 
-      // P1 인접 타일 찾기
-      const p1AdjacentTiles = getNeighbors(p1.position).filter(pos => {
+      // P1 인접의 비-마을 이동 가능 타일 찾기
+      const p1AdjacentNonVillage = getNeighbors(p1.position).filter(pos => {
         const tile = GAME_BOARD.find(t => t.coord.q === pos.q && t.coord.r === pos.r)
         if (!tile) return false
         const cost = TERRAIN_MOVEMENT_COST[tile.type]
-        return cost !== 'blocked'
+        return cost !== 'blocked' && tile.type !== 'village'
       })
 
-      // P3를 P1 인접 위치로 이동
-      if (p1AdjacentTiles.length > 0) {
-        state = movePlayerToPosition(engine, state, 'mage-1', p1AdjacentTiles[0])
-      }
+      const targetPos = p1AdjacentNonVillage.length > 0
+        ? p1AdjacentNonVillage[0]
+        : getNeighbors(p1.position).filter(pos => {
+            const tile = GAME_BOARD.find(t => t.coord.q === pos.q && t.coord.r === pos.r)
+            return tile && TERRAIN_MOVEMENT_COST[tile.type] !== 'blocked'
+          })[0]
 
-      // P1을 타락 상태로 만들기 위해 state 수정 (이미 타락한 상황 가정)
-      // 이 테스트는 "이미 타락한" 플레이어의 동작을 테스트하므로
-      // 초기 상태를 타락 상태로 설정
+      // P3를 P1 인접 비-마을 위치에 체력 낮게 배치, P1은 이미 타락 상태
       state = {
         ...state,
-        players: state.players.map(p =>
-          p.id === 'warrior-1'
-            ? { ...p, state: 'corrupt' as const, corruptDice: 2 }
-            : p
-        ),
+        players: state.players.map(p => {
+          if (p.id === 'warrior-1') return { ...p, state: 'corrupt' as const, corruptDice: 2 }
+          if (p.id === 'mage-1') return { ...p, position: targetPos, health: 4 }
+          return p
+        }),
       }
 
       // P1의 턴으로 이동하고 P3 공격
@@ -190,7 +188,7 @@ describe('4인 플레이어 경쟁 시나리오', () => {
 
       // 여러 번 공격하여 P3 처치
       let attackCount = 0
-      const maxAttacks = 50
+      const maxAttacks = 10
 
       while (attackCount < maxAttacks) {
         const p3Current = state.players.find(p => p.id === 'mage-1')!

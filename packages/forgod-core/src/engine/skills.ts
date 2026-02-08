@@ -412,16 +412,22 @@ function handleWarriorThrow(
 }
 
 /**
- * 무적 태세 (warrior-iron-stance): 다음 턴까지 모든 피해를 자신의 힘 수치만큼 감소시킨다.
+ * 무적 태세 (warrior-iron-stance): 다음 턴 시작까지 모든 피해를 자신의 힘 수치만큼 감소시킨다.
  */
 function handleWarriorIronStance(state: GameState, player: Player): SkillResult {
-  // TODO: 피해 감소 버프 시스템 구현 필요
-  const newState = applySkillUsage(state, player.id, 'warrior-iron-stance')
+  let newState = applySkillUsage(state, player.id, 'warrior-iron-stance')
+
+  newState = {
+    ...newState,
+    players: newState.players.map(p =>
+      p.id === player.id ? { ...p, ironStanceActive: true } : p
+    ),
+  }
 
   return {
     success: true,
     newState,
-    message: `무적 태세! 다음 턴까지 받는 피해가 힘 수치(${getStatTotal(player.stats.strength)})만큼 감소합니다.`,
+    message: `무적 태세! 다음 턴 시작까지 받는 피해가 힘 수치(${getStatTotal(player.stats.strength)})만큼 감소합니다.`,
     events: [],
   }
 }
@@ -511,11 +517,17 @@ function handleWarriorSwordWave(state: GameState, player: Player, position?: Hex
 // ===== 도적 스킬 =====
 
 /**
- * 독 바르기 (rogue-poison): 기본 공격의 피해에 민첩 수치를 더한다.
+ * 독 바르기 (rogue-poison): 다음 기본 공격에 민첩 수치 추가 피해 (사용 후 소모).
  */
 function handleRoguePoison(state: GameState, player: Player): SkillResult {
-  // TODO: 다음 기본 공격 강화 버프 시스템 필요
-  const newState = applySkillUsage(state, player.id, 'rogue-poison')
+  let newState = applySkillUsage(state, player.id, 'rogue-poison')
+
+  newState = {
+    ...newState,
+    players: newState.players.map(p =>
+      p.id === player.id ? { ...p, poisonActive: true } : p
+    ),
+  }
 
   return {
     success: true,
@@ -526,16 +538,29 @@ function handleRoguePoison(state: GameState, player: Player): SkillResult {
 }
 
 /**
- * 그림자 함정 (rogue-shadow-trap): 현재 위치에 함정 설치 (최대 3개)
+ * 그림자 함정 (rogue-shadow-trap): 현재 위치에 함정 설치 (최대 3개, 초과 시 가장 오래된 것 제거)
  */
 function handleRogueShadowTrap(state: GameState, player: Player): SkillResult {
-  // TODO: 함정 시스템 구현 필요
-  const newState = applySkillUsage(state, player.id, 'rogue-shadow-trap')
+  let newState = applySkillUsage(state, player.id, 'rogue-shadow-trap')
+
+  const currentTraps = [...player.traps]
+  currentTraps.push(player.position)
+  // 최대 3개, 초과 시 가장 오래된 것 제거
+  while (currentTraps.length > 3) {
+    currentTraps.shift()
+  }
+
+  newState = {
+    ...newState,
+    players: newState.players.map(p =>
+      p.id === player.id ? { ...p, traps: currentTraps } : p
+    ),
+  }
 
   return {
     success: true,
     newState,
-    message: `그림자 함정! 현재 위치에 함정을 설치했습니다.`,
+    message: `그림자 함정! 현재 위치에 함정을 설치했습니다. (함정 ${currentTraps.length}/3)`,
     events: [],
   }
 }
@@ -632,16 +657,22 @@ function handleRogueBackstab(state: GameState, player: Player, targetId?: string
 }
 
 /**
- * 은신 (rogue-stealth): 공격을 하거나 받기 전까지 지정 공격을 받지 않는다.
+ * 은신 (rogue-stealth): 모든 피해 면역 (몬스터 공격 포함). 본인이 공격하면 해제.
  */
 function handleRogueStealth(state: GameState, player: Player): SkillResult {
-  // TODO: 은신 상태 시스템 구현 필요
-  const newState = applySkillUsage(state, player.id, 'rogue-stealth')
+  let newState = applySkillUsage(state, player.id, 'rogue-stealth')
+
+  newState = {
+    ...newState,
+    players: newState.players.map(p =>
+      p.id === player.id ? { ...p, isStealthed: true } : p
+    ),
+  }
 
   return {
     success: true,
     newState,
-    message: '은신! 공격을 하거나 받기 전까지 지정 공격을 받지 않습니다.',
+    message: '은신! 모든 피해에 면역됩니다. 공격하면 해제됩니다.',
     events: [],
   }
 }
@@ -758,16 +789,22 @@ function handleRogueShuriken(state: GameState, player: Player, position?: HexCoo
 // ===== 법사 스킬 =====
 
 /**
- * 스킬 강화 (mage-enhance): 나머지 스킬을 강화한다.
+ * 스킬 강화 (mage-enhance): 다음 1회 스킬만 강화 (사용 후 소모).
  */
 function handleMageEnhance(state: GameState, player: Player): SkillResult {
-  // TODO: 스킬 강화 시스템 구현 필요 (다음 스킬 강화 플래그)
-  const newState = applySkillUsage(state, player.id, 'mage-enhance')
+  let newState = applySkillUsage(state, player.id, 'mage-enhance')
+
+  newState = {
+    ...newState,
+    players: newState.players.map(p =>
+      p.id === player.id ? { ...p, isEnhanced: true } : p
+    ),
+  }
 
   return {
     success: true,
     newState,
-    message: '스킬 강화! 다음 스킬이 강화됩니다.',
+    message: '스킬 강화! 다음 1회 스킬이 강화됩니다.',
     events: [],
   }
 }
@@ -851,11 +888,52 @@ function handleMageMagicArrow(state: GameState, player: Player, targetId?: strin
 }
 
 /**
- * 분신 (mage-clone): 현재 위치에 분신 생성
+ * 분신 (mage-clone): 현재 위치에 분신 생성 (플레이어당 1개).
+ * 강화: 분신 위치로 순간이동 (위치 교환).
  */
 function handleMageClone(state: GameState, player: Player): SkillResult {
-  // TODO: 분신 시스템 구현 필요
-  const newState = applySkillUsage(state, player.id, 'mage-clone')
+  let newState = applySkillUsage(state, player.id, 'mage-clone')
+
+  const isEnhanced = player.isEnhanced
+
+  // 강화: 기존 분신이 있으면 위치 교환
+  const existingClone = state.clones.find(c => c.playerId === player.id)
+  if (isEnhanced && existingClone) {
+    const clonePosition = existingClone.position
+    const playerPosition = player.position
+
+    // 분신 위치로 순간이동 (위치 교환)
+    newState = {
+      ...newState,
+      players: newState.players.map(p =>
+        p.id === player.id ? { ...p, position: clonePosition, isEnhanced: false } : p
+      ),
+      clones: newState.clones.map(c =>
+        c.playerId === player.id ? { ...c, position: playerPosition } : c
+      ),
+    }
+
+    return {
+      success: true,
+      newState,
+      message: `강화 분신! 분신과 위치를 교환했습니다.`,
+      events: [
+        { type: 'PLAYER_MOVED', playerId: player.id, from: playerPosition, to: clonePosition },
+      ],
+    }
+  }
+
+  // 기존 분신 제거 후 새 분신 생성
+  const newClones = state.clones.filter(c => c.playerId !== player.id)
+  newClones.push({ playerId: player.id, position: player.position })
+
+  newState = {
+    ...newState,
+    clones: newClones,
+    players: newState.players.map(p =>
+      p.id === player.id && isEnhanced ? { ...p, isEnhanced: false } : p
+    ),
+  }
 
   return {
     success: true,
@@ -931,7 +1009,7 @@ function handleMageBurst(state: GameState, player: Player): SkillResult {
 }
 
 /**
- * 메테오 (mage-meteor): 원하는 타일에 지능 피해
+ * 메테오 (mage-meteor): 원하는 타일에 지능 피해. 강화: 지능×2 피해
  */
 function handleMageMeteor(state: GameState, player: Player, position?: HexCoord): SkillResult {
   if (!position) {
@@ -945,7 +1023,14 @@ function handleMageMeteor(state: GameState, player: Player, position?: HexCoord)
     return { success: false, newState: state, message: '존재하지 않는 타일입니다.', events: [] }
   }
 
-  const damage = getStatTotal(player.stats.intelligence)
+  // 몬스터 메테오 면역 체크
+  if (state.monsterRoundBuffs.meteorImmune) {
+    // 몬스터에게는 피해를 주지 않음 (플레이어에게는 가능)
+  }
+
+  const isEnhanced = player.isEnhanced
+  const baseDamage = getStatTotal(player.stats.intelligence)
+  const damage = isEnhanced ? baseDamage * 2 : baseDamage
   const events: GameEvent[] = []
   let newState = applySkillUsage(state, player.id, 'mage-meteor')
 
@@ -971,33 +1056,45 @@ function handleMageMeteor(state: GameState, player: Player, position?: HexCoord)
     }
   }
 
-  // 몬스터
-  for (const monster of state.monsters) {
-    if (monster.isDead) continue
-    if (coordEquals(monster.position, position)) {
-      const actualDamage = Math.min(damage, monster.health)
-      const newHealth = Math.max(0, monster.health - damage)
-      const isDead = newHealth <= 0
+  // 몬스터 (메테오 면역이면 몬스터에게 피해 무시)
+  if (!state.monsterRoundBuffs.meteorImmune) {
+    for (const monster of state.monsters) {
+      if (monster.isDead) continue
+      if (coordEquals(monster.position, position)) {
+        const actualDamage = Math.min(damage, monster.health)
+        const newHealth = Math.max(0, monster.health - damage)
+        const isDead = newHealth <= 0
 
-      newState = {
-        ...newState,
-        monsters: newState.monsters.map(m =>
-          m.id === monster.id ? { ...m, health: newHealth, isDead } : m
-        ),
-        players: newState.players.map(p =>
-          p.id === player.id ? { ...p, monsterEssence: p.monsterEssence + actualDamage } : p
-        ),
+        newState = {
+          ...newState,
+          monsters: newState.monsters.map(m =>
+            m.id === monster.id ? { ...m, health: newHealth, isDead } : m
+          ),
+          players: newState.players.map(p =>
+            p.id === player.id ? { ...p, monsterEssence: p.monsterEssence + actualDamage } : p
+          ),
+        }
+
+        events.push({ type: 'PLAYER_ATTACKED', attackerId: player.id, targetId: monster.id, damage })
+        if (isDead) events.push({ type: 'MONSTER_DIED', monsterId: monster.id })
       }
+    }
+  }
 
-      events.push({ type: 'PLAYER_ATTACKED', attackerId: player.id, targetId: monster.id, damage })
-      if (isDead) events.push({ type: 'MONSTER_DIED', monsterId: monster.id })
+  // 강화 소모
+  if (isEnhanced) {
+    newState = {
+      ...newState,
+      players: newState.players.map(p =>
+        p.id === player.id ? { ...p, isEnhanced: false } : p
+      ),
     }
   }
 
   return {
     success: true,
     newState,
-    message: `메테오! (${position.q}, ${position.r})에 ${damage}의 피해를 입혔습니다.`,
+    message: `${isEnhanced ? '강화 ' : ''}메테오! (${position.q}, ${position.r})에 ${damage}의 피해를 입혔습니다.`,
     events,
   }
 }
