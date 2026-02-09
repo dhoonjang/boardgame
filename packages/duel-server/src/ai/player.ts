@@ -1,8 +1,9 @@
 import type { Server } from 'socket.io'
 import type { GameState } from '../game'
-import type { AIPersonality, AITurnContext, AIReactionEvent, AIReactionContext } from './types'
+import type { AIPersonality, AIMessageContext, AIGameEvent, AIResponse } from './types'
 import { generatePersonality } from './personality'
-import { decideAITurn, generateReaction } from './brain'
+import { AIConversation, fallbackDecision, fallbackReaction, validateDecision, findSafeAction } from './brain'
+import { buildSystemPrompt, buildEventMessage, buildPlayerChatMessage } from './prompt'
 import type { SessionManager } from '../session'
 
 export const AI_PLAYER_ID = 'ai-player'
@@ -15,6 +16,8 @@ export class AIPlayer {
   private sessionManager: SessionManager
   private processing = false
   private disposed = false
+  private conversation: AIConversation
+  private pendingChat: string[] = []
 
   constructor(
     gameId: string,
@@ -28,6 +31,7 @@ export class AIPlayer {
     this.io = io
     this.humanSocketId = humanSocketId
     this.sessionManager = sessionManager
+    this.conversation = new AIConversation(buildSystemPrompt(this.personality))
   }
 
   get name(): string {
@@ -36,20 +40,78 @@ export class AIPlayer {
 
   dispose(): void {
     this.disposed = true
+    this.conversation.reset()
   }
 
   /**
-   * 게임 이벤트에 대한 리액션 (표정+대사만, 액션 없음)
+   * 유저의 직접 채팅 메시지 처리
    */
-  async reactToEvent(event: AIReactionEvent, gameState: GameState, extraData?: Partial<AIReactionContext>): Promise<void> {
+  async handlePlayerChat(message: string): Promise<void> {
     if (this.disposed) return
+
+    if (this.processing) {
+      this.pendingChat.push(message)
+      return
+    }
+
+    this.processing = true
+    try {
+      const userMsg = buildPlayerChatMessage(message)
+      const response = await this.conversation.chat(userMsg)
+
+      if (this.disposed) return
+
+      if (response) {
+        this.io.to(this.humanSocketId).emit('ai-state', {
+          expression: response.expression,
+          message: response.message,
+        })
+
+        // AI 턴이고 response에 action이 있으면 실행
+        if (response.action) {
+          const room = this.sessionManager.getRoom(this.gameId)
+          if (room) {
+            const engine = this.sessionManager.getEngine()
+            const aiActions = engine.getValidActions(room.gameState, AI_PLAYER_ID)
+            if (aiActions.length > 0) {
+              const validated = validateDecision(
+                { action: response.action, expression: response.expression, message: response.message },
+                aiActions,
+              )
+              await this.delay(300)
+              if (this.disposed) return
+              await this.executeAction(room.gameState, validated.action)
+            }
+          }
+        }
+      } else {
+        // API 실패 시 간단한 fallback 대화
+        const fallback: AIResponse = { expression: 'poker_face', message: '...' }
+        this.conversation.addAssistantMessage(fallback)
+        this.io.to(this.humanSocketId).emit('ai-state', {
+          expression: fallback.expression,
+          message: fallback.message,
+        })
+      }
+    } finally {
+      this.processing = false
+      await this.processPendingChat()
+    }
+  }
+
+  /**
+   * 게임 이벤트에 대한 대화형 응답 (리액션 or 액션+리액션)
+   */
+  private async sendEvent(event: AIGameEvent, gameState: GameState, extraData?: Partial<AIMessageContext>): Promise<AIResponse | null> {
+    if (this.disposed) return null
 
     const engine = this.sessionManager.getEngine()
     const view = engine.getPlayerView(gameState, AI_PLAYER_ID)
+    const aiActions = event === 'ai_turn' ? engine.getValidActions(gameState, AI_PLAYER_ID) : undefined
 
-    const ctx: AIReactionContext = {
-      personality: this.personality,
+    const ctx: AIMessageContext = {
       event,
+      personality: this.personality,
       phase: gameState.phase,
       opponentCard: view.opponentCard,
       myChips: view.me.chips,
@@ -60,16 +122,31 @@ export class AIPlayer {
       myIndex: view.myIndex,
       myPlayerId: AI_PLAYER_ID,
       roundHistory: view.roundHistory,
+      validActions: aiActions,
+      mySwapCount: view.me.swapCount,
+      deckRemaining: view.deckRemaining,
       ...extraData,
     }
 
-    const reaction = await generateReaction(ctx)
-    if (this.disposed) return
+    const eventMessage = buildEventMessage(ctx)
+    const response = await this.conversation.chat(eventMessage)
 
-    this.io.to(this.humanSocketId).emit('ai-state', {
-      expression: reaction.expression,
-      message: reaction.message,
-    })
+    if (this.disposed) return null
+
+    if (response) {
+      return response
+    }
+
+    // fallback
+    if (event === 'ai_turn') {
+      const fb = fallbackDecision(ctx)
+      this.conversation.addAssistantMessage(fb)
+      return fb
+    }
+
+    const fb = fallbackReaction(ctx)
+    this.conversation.addAssistantMessage(fb)
+    return fb
   }
 
   /**
@@ -89,7 +166,7 @@ export class AIPlayer {
         if (aiPlayer && humanPlayer) {
           const iWon = gameState.winner === AI_PLAYER_ID
           const isDraw = gameState.isDraw
-          await this.reactToEvent('game_over', gameState, {
+          const response = await this.sendEvent('game_over', gameState, {
             gameResult: {
               iWon,
               isDraw,
@@ -97,6 +174,12 @@ export class AIPlayer {
               opponentFinalChips: humanPlayer.chips,
             },
           })
+          if (response) {
+            this.io.to(this.humanSocketId).emit('ai-state', {
+              expression: response.expression,
+              message: response.message,
+            })
+          }
         }
       } finally {
         this.processing = false
@@ -122,9 +205,10 @@ export class AIPlayer {
             const iWon = lastRound.winner === AI_PLAYER_ID
             const isDraw = lastRound.winner !== null && !iWon && lastRound.foldedPlayerId === null
               ? false : lastRound.winner === null && lastRound.foldedPlayerId === null
+
             const isFold = lastRound.foldedPlayerId !== null
 
-            await this.reactToEvent('round_end', gameState, {
+            const response = await this.sendEvent('round_end', gameState, {
               roundResult: {
                 myCard,
                 opponentCard: oppCard,
@@ -134,6 +218,12 @@ export class AIPlayer {
                 potWon: lastRound.potWon,
               },
             })
+            if (response) {
+              this.io.to(this.humanSocketId).emit('ai-state', {
+                expression: response.expression,
+                message: response.message,
+              })
+            }
             if (this.disposed) return
             await this.delay(2000)
             if (this.disposed) return
@@ -149,7 +239,13 @@ export class AIPlayer {
         if (this.disposed) return
         const room = this.sessionManager.getRoom(this.gameId)
         if (room && room.gameState.phase === 'ability') {
-          await this.reactToEvent('round_start', room.gameState)
+          const response = await this.sendEvent('round_start', room.gameState)
+          if (response) {
+            this.io.to(this.humanSocketId).emit('ai-state', {
+              expression: response.expression,
+              message: response.message,
+            })
+          }
           if (this.disposed) return
           await this.delay(1000)
           if (this.disposed) return
@@ -173,9 +269,25 @@ export class AIPlayer {
 
     this.processing = true
     try {
-      // humanAction이 있으면 리액션 먼저
+      // humanAction이 있으면 리액션 먼저 (START_ROUND는 round_start로 처리)
       if (humanAction) {
-        await this.reactToEvent('human_action', gameState, { humanAction })
+        if (humanAction === 'START_ROUND') {
+          const reaction = await this.sendEvent('round_start', gameState)
+          if (reaction) {
+            this.io.to(this.humanSocketId).emit('ai-state', {
+              expression: reaction.expression,
+              message: reaction.message,
+            })
+          }
+        } else {
+          const reaction = await this.sendEvent('human_action', gameState, { humanAction })
+          if (reaction) {
+            this.io.to(this.humanSocketId).emit('ai-state', {
+              expression: reaction.expression,
+              message: reaction.message,
+            })
+          }
+        }
         if (this.disposed) return
         await this.delay(1000)
         if (this.disposed) return
@@ -184,45 +296,50 @@ export class AIPlayer {
       // 'thinking' 표정 전송
       this.io.to(this.humanSocketId).emit('ai-state', {
         expression: 'thinking',
-        message: '음...',
+        message: null,
       })
 
-      const view = engine.getPlayerView(gameState, AI_PLAYER_ID)
+      // AI 턴 결정
+      const response = await this.sendEvent('ai_turn', gameState)
+      if (this.disposed) return
 
-      const context: AITurnContext = {
-        personality: this.personality,
-        phase: gameState.phase as 'ability' | 'betting',
-        validActions: aiActions,
-        opponentCard: view.opponentCard,
-        myChips: view.me.chips,
-        opponentChips: view.opponent.chips,
-        pot: view.pot,
-        roundNumber: view.roundNumber,
-        maxRounds: view.maxRounds,
-        mySwapCount: view.me.swapCount,
-        myIndex: view.myIndex,
-        myPlayerId: AI_PLAYER_ID,
-        roundHistory: view.roundHistory,
-        deckRemaining: view.deckRemaining,
+      if (response) {
+        // 표정 + 대사 전송
+        this.io.to(this.humanSocketId).emit('ai-state', {
+          expression: response.expression,
+          message: response.message,
+        })
+
+        // 짧은 딜레이 후 액션 실행
+        await this.delay(300)
+        if (this.disposed) return
+
+        const action = response.action ?? findSafeAction(aiActions)
+        const validated = validateDecision(
+          { action, expression: response.expression, message: response.message },
+          aiActions,
+        )
+        await this.executeAction(gameState, validated.action)
       }
-
-      const decision = await decideAITurn(context)
-
-      if (this.disposed) return
-
-      // 표정 + 대사 전송
-      this.io.to(this.humanSocketId).emit('ai-state', {
-        expression: decision.expression,
-        message: decision.message,
-      })
-
-      // 짧은 딜레이 후 액션 실행
-      await this.delay(300)
-      if (this.disposed) return
-
-      await this.executeAction(gameState, decision.action)
     } finally {
       this.processing = false
+    }
+  }
+
+  /**
+   * 외부 이벤트용 (socket-handlers에서 호출) — round_start 리액션
+   */
+  async reactToEvent(event: AIGameEvent, gameState: GameState, extraData?: Partial<AIMessageContext>): Promise<void> {
+    if (this.disposed) return
+
+    const response = await this.sendEvent(event, gameState, extraData)
+    if (this.disposed) return
+
+    if (response) {
+      this.io.to(this.humanSocketId).emit('ai-state', {
+        expression: response.expression,
+        message: response.message,
+      })
     }
   }
 
@@ -252,6 +369,13 @@ export class AIPlayer {
     if (!this.disposed) {
       // 비동기로 재귀하여 스택 오버플로우 방지
       setTimeout(() => this.onStateChanged(result.newState), 100)
+    }
+  }
+
+  private async processPendingChat(): Promise<void> {
+    while (this.pendingChat.length > 0 && !this.disposed) {
+      const msg = this.pendingChat.shift()!
+      await this.handlePlayerChat(msg)
     }
   }
 

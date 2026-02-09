@@ -1,4 +1,4 @@
 export { generatePersonality, PRESETS } from './personality'
-export { buildAIPrompt } from './prompt'
-export { decideAITurn } from './brain'
-export type { AIPersonality, AIDecision, AITurnContext } from './types'
+export { buildSystemPrompt, buildEventMessage } from './prompt'
+export { AIConversation } from './brain'
+export type { AIPersonality, AIDecision, AIMessageContext, AIGameEvent, AIResponse } from './types'

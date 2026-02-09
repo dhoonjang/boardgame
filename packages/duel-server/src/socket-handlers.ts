@@ -163,13 +163,19 @@ export function registerSocketHandlers(io: Server, sessionManager: SessionManage
             ? `RAISE ${(action as any).amount}`
             : action.type
 
-          // 인간이 START_ROUND → AI가 상대 카드 보고 리액션 (능력 단계 전)
-          if (action.type === 'START_ROUND' && result.newState.phase === 'ability') {
-            aiPlayer.reactToEvent('round_start', result.newState)
-          }
-
           aiPlayer.onStateChanged(result.newState, humanActionStr)
         }
+      }
+    })
+
+    // ─── player-chat ───
+    socket.on('player-chat', (data: { message: string }) => {
+      const gameInfo = sessionManager.getGameBySocketId(socket.id)
+      if (!gameInfo || !sessionManager.isAIGame(gameInfo.gameId)) return
+
+      const aiPlayer = aiPlayers.get(gameInfo.gameId)
+      if (aiPlayer) {
+        aiPlayer.handlePlayerChat(data.message)
       }
     })
 

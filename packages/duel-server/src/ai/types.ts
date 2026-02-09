@@ -21,34 +21,13 @@ export interface AIDecision {
   message: string | null
 }
 
-export interface AITurnContext {
+// ─── 멀티턴 대화 시스템 ───
+
+export type AIGameEvent = 'round_start' | 'human_action' | 'ai_turn' | 'round_end' | 'game_over'
+
+export interface AIMessageContext {
+  event: AIGameEvent
   personality: AIPersonality
-  phase: 'ability' | 'betting'
-  validActions: ValidAction[]
-  opponentCard: number | null
-  myChips: number
-  opponentChips: number
-  pot: number
-  roundNumber: number
-  maxRounds: number
-  mySwapCount: number
-  myIndex: number
-  myPlayerId: string
-  roundHistory: RoundResult[]
-  deckRemaining: number
-}
-
-// ─── 리액션 시스템 ───
-
-export type AIReactionEvent =
-  | 'human_action'
-  | 'round_start'
-  | 'round_end'
-  | 'game_over'
-
-export interface AIReactionContext {
-  personality: AIPersonality
-  event: AIReactionEvent
   phase: string
   opponentCard: number | null
   myChips: number
@@ -59,6 +38,9 @@ export interface AIReactionContext {
   myIndex: number
   myPlayerId: string
   roundHistory: RoundResult[]
+  validActions?: ValidAction[]
+  mySwapCount?: number
+  deckRemaining?: number
   humanAction?: string
   roundResult?: {
     myCard: number
@@ -76,7 +58,8 @@ export interface AIReactionContext {
   }
 }
 
-export interface AIReaction {
+export interface AIResponse {
+  action?: GameAction
   expression: AIExpression
-  message: string
+  message: string | null
 }

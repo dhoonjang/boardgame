@@ -10,6 +10,7 @@ import AbilityButtons from '../components/AbilityButtons'
 import RoundHistory from '../components/RoundHistory'
 import GameOverModal from '../components/GameOverModal'
 import RoundResultPopup from '../components/RoundResultPopup'
+import ChatArea from '../components/ChatArea'
 
 function getPhaseLabel(phase: string): string {
   switch (phase) {
@@ -71,97 +72,107 @@ export default function GamePage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center p-4">
-      <div className="max-w-lg w-full flex flex-col gap-4">
+    <div className="min-h-screen flex justify-center p-4">
+      <div className={`flex gap-4 ${isAIGame ? 'max-w-4xl' : 'max-w-lg'} w-full`}>
+        {/* 게임 영역 */}
+        <div className="max-w-lg w-full flex flex-col gap-4">
 
-        {/* 헤더 */}
-        <div className="flex items-center justify-between bg-duel-surface rounded-lg px-4 py-2 border border-duel-border">
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-slate-400">
-              R{playerView.roundNumber}
-            </span>
-            {playerView.phase !== 'waiting' && playerView.phase !== 'game_over' && (
-              <span className={`text-xs px-1.5 py-0.5 rounded ${
-                playerView.firstPlayerIndex === playerView.myIndex
-                  ? 'bg-amber-500/20 text-amber-300'
-                  : 'bg-slate-600/30 text-slate-400'
-              }`}>
-                선: {playerView.firstPlayerIndex === playerView.myIndex ? '나' : '상대'}
+          {/* 헤더 */}
+          <div className="flex items-center justify-between bg-duel-surface rounded-lg px-4 py-2 border border-duel-border">
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-slate-400">
+                R{playerView.roundNumber}
               </span>
-            )}
-            <span className="text-sm font-semibold px-2 py-0.5 rounded bg-duel-accent/20 text-duel-accent">
-              {getPhaseLabel(playerView.phase)}
-            </span>
+              {playerView.phase !== 'waiting' && playerView.phase !== 'game_over' && (
+                <span className={`text-xs px-1.5 py-0.5 rounded ${
+                  playerView.firstPlayerIndex === playerView.myIndex
+                    ? 'bg-amber-500/20 text-amber-300'
+                    : 'bg-slate-600/30 text-slate-400'
+                }`}>
+                  선: {playerView.firstPlayerIndex === playerView.myIndex ? '나' : '상대'}
+                </span>
+              )}
+              <span className="text-sm font-semibold px-2 py-0.5 rounded bg-duel-accent/20 text-duel-accent">
+                {getPhaseLabel(playerView.phase)}
+              </span>
+            </div>
+            <div className="text-sm">
+              {isMyTurn ? (
+                <span className="text-emerald-400 font-semibold">내 차례</span>
+              ) : (
+                <span className="text-slate-400">상대 차례</span>
+              )}
+            </div>
           </div>
-          <div className="text-sm">
-            {isMyTurn ? (
-              <span className="text-emerald-400 font-semibold">내 차례</span>
-            ) : (
-              <span className="text-slate-400">상대 차례</span>
+
+          {/* 에러 메시지 */}
+          {error && (
+            <div className="bg-red-500/20 border border-red-500/30 text-red-300 px-4 py-2 rounded-lg text-sm text-center">
+              {error}
+            </div>
+          )}
+
+          {/* 상대 영역 */}
+          <OpponentArea
+            opponent={playerView.opponent}
+            opponentCard={playerView.opponentCard}
+            isAIGame={isAIGame}
+            aiExpression={aiExpression}
+            aiChatMessage={aiChatMessage}
+          />
+
+          {/* 팟 */}
+          <PotDisplay pot={playerView.pot} />
+
+          {/* 내 영역 */}
+          <MyArea
+            me={playerView.me}
+          />
+
+          {/* 액션 컨트롤 */}
+          <div className="bg-duel-surface rounded-xl border border-duel-border p-4">
+            {hasStartAction && playerView.roundNumber === 0 && (
+              <button
+                onClick={() => sendAction({ type: 'START_ROUND' })}
+                className="w-full px-6 py-3 bg-duel-accent hover:bg-indigo-500 text-white font-semibold rounded-lg text-lg transition-colors"
+              >
+                게임 시작!
+              </button>
+            )}
+
+            {hasAbilityActions && (
+              <AbilityButtons
+                validActions={validActions}
+                onAction={sendAction}
+              />
+            )}
+
+            {hasBettingActions && (
+              <BettingControls
+                validActions={validActions}
+                onAction={sendAction}
+              />
+            )}
+
+            {!isMyTurn && playerView.phase !== 'round_end' && playerView.phase !== 'game_over' && playerView.phase !== 'waiting' && (
+              <p className="text-center text-slate-400">상대의 차례를 기다리는 중...</p>
             )}
           </div>
+
+          {/* 라운드 기록 */}
+          <RoundHistory
+            history={playerView.roundHistory}
+            myPlayerId={playerId!}
+            myIndex={playerView.myIndex}
+          />
         </div>
 
-        {/* 에러 메시지 */}
-        {error && (
-          <div className="bg-red-500/20 border border-red-500/30 text-red-300 px-4 py-2 rounded-lg text-sm text-center">
-            {error}
+        {/* 채팅 영역 (AI 게임에서만, 옆에 표시) */}
+        {isAIGame && (
+          <div className="w-72 flex-shrink-0">
+            <ChatArea />
           </div>
         )}
-
-        {/* 상대 영역 */}
-        <OpponentArea
-          opponent={playerView.opponent}
-          opponentCard={playerView.opponentCard}
-          isAIGame={isAIGame}
-          aiExpression={aiExpression}
-          aiChatMessage={aiChatMessage}
-        />
-
-        {/* 팟 */}
-        <PotDisplay pot={playerView.pot} />
-
-        {/* 내 영역 */}
-        <MyArea
-          me={playerView.me}
-        />
-
-        {/* 액션 컨트롤 */}
-        <div className="bg-duel-surface rounded-xl border border-duel-border p-4">
-          {hasStartAction && playerView.roundNumber === 0 && (
-            <button
-              onClick={() => sendAction({ type: 'START_ROUND' })}
-              className="w-full px-6 py-3 bg-duel-accent hover:bg-indigo-500 text-white font-semibold rounded-lg text-lg transition-colors"
-            >
-              게임 시작!
-            </button>
-          )}
-
-          {hasAbilityActions && (
-            <AbilityButtons
-              validActions={validActions}
-              onAction={sendAction}
-            />
-          )}
-
-          {hasBettingActions && (
-            <BettingControls
-              validActions={validActions}
-              onAction={sendAction}
-            />
-          )}
-
-          {!isMyTurn && playerView.phase !== 'round_end' && playerView.phase !== 'game_over' && playerView.phase !== 'waiting' && (
-            <p className="text-center text-slate-400">상대의 차례를 기다리는 중...</p>
-          )}
-        </div>
-
-        {/* 라운드 기록 */}
-        <RoundHistory
-          history={playerView.roundHistory}
-          myPlayerId={playerId!}
-          myIndex={playerView.myIndex}
-        />
       </div>
 
       {/* 라운드 결과 팝업 */}

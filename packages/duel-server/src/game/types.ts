@@ -142,6 +142,7 @@ export interface ClientEvents {
   'create-ai-game': (data: { player: { id: string; name: string }; personalityName?: string }) => void
   'join-game': (data: { gameId: string; player: { id: string; name: string } }) => void
   'game-action': (data: { action: GameAction }) => void
+  'player-chat': (data: { message: string }) => void
   'leave-game': () => void
 }
 

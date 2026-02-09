@@ -1,5 +1,5 @@
 import type { RoundResult, ValidAction } from '../game'
-import type { AIPersonality, AIReactionContext, AITurnContext } from './types'
+import type { AIPersonality, AIMessageContext } from './types'
 
 function formatValidActions(actions: ValidAction[]): string {
   return actions.map(a => {
@@ -58,10 +58,8 @@ Swap은 내 카드를 새 카드로 교체하는 능력이야 (교체 후에도 
 상대방의 반응을 보고 내 카드를 교체할지 말지 고민하면 돼.`
 }
 
-export function buildAIPrompt(ctx: AITurnContext): { system: string; user: string } {
-  const { personality } = ctx
-
-  const system = `너는 인디언 포커 카드 게임에서 상대방과 마주앉아 플레이하는 AI 플레이어야.
+export function buildSystemPrompt(personality: AIPersonality): string {
+  return `너는 인디언 포커 카드 게임에서 상대 플레이어와 1:1로 대화하면서 게임을 진행하는 AI 플레이어야.
 성격: ${personality.name} — ${personality.description}
 
 게임 규칙:
@@ -73,12 +71,17 @@ export function buildAIPrompt(ctx: AITurnContext): { system: string; user: strin
 
 ${buildPlayStyleGuide(personality)}
 
-반드시 아래 JSON 형식으로만 응답해 (다른 텍스트 없이 JSON만):
-{
-  "action": { "type": "액션타입", ... },
-  "expression": "표정",
-  "message": "상대에게 하는 말 또는 null"
-}
+대화에는 두 종류의 메시지가 올 수 있어:
+- [시스템] 으로 시작하는 메시지: 게임 진행 상황 알림. 행동 요청이 있으면 action을 포함해서 응답해.
+- [상대] 로 시작하는 메시지: 상대 플레이어가 직접 하는 말. 성격에 맞게 대화해.
+
+행동 결정이 필요할 때 (action 포함):
+{ "action": { "type": "..." }, "expression": "...", "message": "..." }
+
+대화만 할 때 (action 없이):
+{ "expression": "...", "message": "..." }
+
+반드시 JSON 형식으로만 응답해 (다른 텍스트 없이 JSON만).
 
 가능한 expression: ${EXPRESSION_LIST}
 다양한 표정을 사용해. 같은 표정을 연속으로 쓰지 마.
@@ -89,103 +92,59 @@ ${buildPlayStyleGuide(personality)}
 대사로 심리전을 해야 해:
 ${deceptionGuide(personality.speechDeception)}
 
-message는 속마음 보다는 상대 플레이어에게 직접 하는 말 위주로.`
-
-  const phaseLabel = ctx.phase === 'ability' ? '능력 선택' : '베팅'
-
-  const user = `현재 상황:
-- 라운드: ${ctx.roundNumber}/${ctx.maxRounds}
-- 단계: ${phaseLabel}
-- 상대 카드: ${ctx.opponentCard ?? '아직 없음'}
-- 내 칩: ${ctx.myChips}, 상대 칩: ${ctx.opponentChips}, 팟: ${ctx.pot}
-- 내 Swap 남은 횟수: ${ctx.mySwapCount}
-- 덱 남은 카드: ${ctx.deckRemaining}장
-- 이전 라운드 기록:
-${formatRoundHistory(ctx.roundHistory, ctx.myIndex, ctx.myPlayerId)}
-
-가능한 행동:
-${formatValidActions(ctx.validActions)}
-
-어떻게 하겠어?`
-
-  return { system, user }
+message는 속마음 보다는 상대 플레이어에게 직접 하는 말 위주로. 짧고 자연스럽게.`
 }
 
-export function buildReactionPrompt(ctx: AIReactionContext): { system: string; user: string } {
-  const { personality, event } = ctx
-
-  const system = `너는 인디언 포커 카드 게임에서 상대방과 마주앉아 플레이하는 AI 플레이어야.
-성격: ${personality.name} — ${personality.description}
-
-지금은 행동을 결정하는 게 아니라, 상대 플레이어에게 말로 리액션하면 돼.
-
-[리액션 성향]
-- 표현력 ${level(personality.expressiveness)}: ${personality.expressiveness > 0.7 ? '표정을 크게 드러내며 다양한 감정을 보여줘' : personality.expressiveness < 0.3 ? '표정 변화가 거의 없이 무덤덤하게 반응해' : '적당히 감정을 드러내'}
-- 수다 ${level(personality.chattiness)}: ${personality.chattiness > 0.7 ? '거의 매번 말을 해' : personality.chattiness < 0.4 ? '말을 아끼고 중요한 순간에만 한마디 해' : '적당히 말을 하되 매번은 아니야'}
-
-반드시 아래 JSON 형식으로만 응답해 (다른 텍스트 없이 JSON만):
-{
-  "expression": "표정",
-  "message": "상대에게 하는 말"
-}
-
-[절대 규칙] message에서 상대 카드의 실제 숫자를 직접 말하거나 "높다/낮다"를 솔직하게 알려주면 안 돼.
-
-너는 상대 카드를 볼 수 있지만, 상대는 자기 카드를 모르는 게임이야.
-대사로 심리전을 해야 해:
-${deceptionGuide(personality.speechDeception)}
-
-message는 속마음 보다는 상대 플레이어에게 직접 하는 말 위주로.
-
-가능한 expression: ${EXPRESSION_LIST}`
-
-  let situation = ''
+export function buildEventMessage(ctx: AIMessageContext): string {
+  const { event } = ctx
 
   switch (event) {
-    case 'round_start':
-      situation = `새 라운드 ${ctx.roundNumber}/${ctx.maxRounds} 시작!
-상대 카드: ${ctx.opponentCard ?? '아직 없음'}
-내 칩: ${ctx.myChips}, 상대 칩: ${ctx.opponentChips}
-상대 카드를 처음 봤어. 상대에게 한마디 해.`
-      break
+    case 'round_start': {
+      let msg = `[시스템] 새 라운드 ${ctx.roundNumber}/${ctx.maxRounds} 시작! 상대 카드: ${ctx.opponentCard ?? '아직 없음'}. 내 칩: ${ctx.myChips}, 상대 칩: ${ctx.opponentChips}.`
+      // 첫 라운드에서만 히스토리 포함
+      if (ctx.roundHistory.length > 0 && ctx.roundNumber <= 2) {
+        msg += `\n이전 기록:\n${formatRoundHistory(ctx.roundHistory, ctx.myIndex, ctx.myPlayerId)}`
+      }
+      return msg
+    }
 
     case 'human_action':
-      situation = `라운드 ${ctx.roundNumber}/${ctx.maxRounds}
-상대가 "${ctx.humanAction}"을(를) 했어.
-상대 카드: ${ctx.opponentCard ?? '모름'}, 팟: ${ctx.pot}칩
-내 칩: ${ctx.myChips}, 상대 칩: ${ctx.opponentChips}
-상대의 행동에 대해 상대에게 한마디 해.`
-      break
+      return `[시스템] 상대가 ${ctx.humanAction}을(를) 했어. 상대 카드: ${ctx.opponentCard ?? '모름'}, 팟: ${ctx.pot}칩.`
+
+    case 'ai_turn': {
+      const phaseLabel = ctx.phase === 'ability' ? '능력 선택' : '베팅'
+      let msg = `[시스템] 네 턴이야. ${phaseLabel} 단계.`
+      if (ctx.phase === 'ability') {
+        msg += ` Swap 남은 횟수: ${ctx.mySwapCount ?? 0}, 덱 남은 카드: ${ctx.deckRemaining ?? 0}장.`
+      }
+      msg += ` 내 칩: ${ctx.myChips}, 상대 칩: ${ctx.opponentChips}, 팟: ${ctx.pot}칩.`
+      if (ctx.validActions && ctx.validActions.length > 0) {
+        msg += `\n가능한 행동:\n${formatValidActions(ctx.validActions)}`
+      }
+      return msg
+    }
 
     case 'round_end': {
       const r = ctx.roundResult
       if (r) {
         const result = r.isDraw ? '무승부' : r.iWon ? '내가 이겼어' : '내가 졌어'
         const method = r.isFold ? '(폴드)' : `(내 카드 ${r.myCard} vs 상대 ${r.opponentCard})`
-        situation = `라운드 ${ctx.roundNumber} 결과: ${result} ${method}
-팟 ${r.potWon}칩. 내 칩: ${ctx.myChips}, 상대 칩: ${ctx.opponentChips}
-결과에 대해 상대에게 한마디 해.`
+        return `[시스템] 라운드 ${ctx.roundNumber} 결과: ${result} ${method}. 팟 ${r.potWon}칩. 내 칩: ${ctx.myChips}, 상대 칩: ${ctx.opponentChips}.`
       }
-      break
+      return `[시스템] 라운드 ${ctx.roundNumber} 종료.`
     }
 
     case 'game_over': {
       const g = ctx.gameResult
       if (g) {
         const result = g.isDraw ? '무승부' : g.iWon ? '내가 이겼어' : '내가 졌어'
-        situation = `게임 종료! ${result}!
-내 최종 칩: ${g.myFinalChips}, 상대 최종 칩: ${g.opponentFinalChips}
-게임 끝난 소감을 상대에게 한마디 해.`
+        return `[시스템] 게임 종료! ${result}! 내 최종 칩: ${g.myFinalChips}, 상대 최종 칩: ${g.opponentFinalChips}.`
       }
-      break
+      return `[시스템] 게임 종료!`
     }
   }
+}
 
-  const historyStr = ctx.roundHistory.length > 0
-    ? `\n이전 라운드 기록:\n${formatRoundHistory(ctx.roundHistory, ctx.myIndex, ctx.myPlayerId)}`
-    : ''
-
-  const user = `${situation}${historyStr}`
-
-  return { system, user }
+export function buildPlayerChatMessage(message: string): string {
+  return `[상대] ${message}`
 }

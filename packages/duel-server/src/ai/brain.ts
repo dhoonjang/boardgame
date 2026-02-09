@@ -1,6 +1,5 @@
 import type { GameAction, ValidAction } from '../game'
-import { buildAIPrompt, buildReactionPrompt } from './prompt'
-import type { AIDecision, AIReaction, AIReactionContext, AITurnContext } from './types'
+import type { AIDecision, AIMessageContext, AIResponse } from './types'
 
 let Anthropic: any = null
 
@@ -24,7 +23,7 @@ const VALID_EXPRESSIONS = new Set([
   'shocked', 'cold', 'sweating', 'mocking',
 ])
 
-function findSafeAction(validActions: ValidAction[]): GameAction {
+export function findSafeAction(validActions: ValidAction[]): GameAction {
   const skip = validActions.find(a => a.type === 'SKIP_ABILITY')
   if (skip) return { type: 'SKIP_ABILITY' }
 
@@ -41,7 +40,7 @@ function isValidActionType(actionType: string, validActions: ValidAction[]): boo
   return validActions.some(a => a.type === actionType)
 }
 
-function validateDecision(decision: AIDecision, validActions: ValidAction[]): AIDecision {
+export function validateDecision(decision: AIDecision, validActions: ValidAction[]): AIDecision {
   let { action, expression, message } = decision
 
   if (!VALID_EXPRESSIONS.has(expression)) {
@@ -65,8 +64,19 @@ function validateDecision(decision: AIDecision, validActions: ValidAction[]): AI
   return { action, expression, message }
 }
 
-function fallbackDecision(ctx: AITurnContext): AIDecision {
-  const { validActions, opponentCard } = ctx
+function validateResponse(response: AIResponse): AIResponse {
+  let { action, expression, message } = response
+
+  if (!VALID_EXPRESSIONS.has(expression)) {
+    expression = 'poker_face'
+  }
+
+  return { action, expression, message }
+}
+
+export function fallbackDecision(ctx: AIMessageContext): AIDecision {
+  const validActions = ctx.validActions ?? []
+  const { opponentCard } = ctx
   const isAbility = ctx.phase === 'ability'
 
   if (isAbility) {
@@ -97,56 +107,7 @@ function fallbackDecision(ctx: AITurnContext): AIDecision {
   return { action: findSafeAction(validActions), expression: 'poker_face', message: '흠...' }
 }
 
-export async function decideAITurn(ctx: AITurnContext): Promise<AIDecision> {
-  const client = getClient()
-
-  if (!client) {
-    console.warn('[AI Brain] API 없음, fallback 사용')
-    return fallbackDecision(ctx)
-  }
-
-  try {
-    const { system, user } = buildAIPrompt(ctx)
-
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 300,
-      system,
-      messages: [{ role: 'user', content: user }],
-    })
-
-    const text = (response.content[0] as { type: string; text: string }).text
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      console.warn('[AI Brain] JSON 파싱 실패, fallback 사용:', text)
-      return fallbackDecision(ctx)
-    }
-
-    const decision = JSON.parse(jsonMatch[0]) as AIDecision
-    return validateDecision(decision, ctx.validActions)
-  } catch (err) {
-    console.warn('[AI Brain] API 호출 실패, fallback 사용:', err)
-    return fallbackDecision(ctx)
-  }
-}
-
-// ─── 리액션 시스템 ───
-
-function validateReaction(reaction: AIReaction): AIReaction {
-  let { expression, message } = reaction
-
-  if (!VALID_EXPRESSIONS.has(expression)) {
-    expression = 'poker_face'
-  }
-
-  if (!message || typeof message !== 'string') {
-    message = '...'
-  }
-
-  return { expression, message }
-}
-
-function fallbackReaction(ctx: AIReactionContext): AIReaction {
+export function fallbackReaction(ctx: AIMessageContext): AIResponse {
   const { event, opponentCard, roundResult, gameResult } = ctx
 
   switch (event) {
@@ -197,37 +158,68 @@ function fallbackReaction(ctx: AIReactionContext): AIReaction {
         return { expression: 'angry', message: '다음엔 지지 않을 거야' }
       }
       return { expression: 'poker_face', message: '수고했어' }
+
+    default:
+      return { expression: 'poker_face', message: '...' }
   }
 }
 
-export async function generateReaction(ctx: AIReactionContext): Promise<AIReaction> {
-  const client = getClient()
+// ─── 멀티턴 대화 클래스 ───
 
-  if (!client) {
-    return fallbackReaction(ctx)
+interface MessageParam {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export class AIConversation {
+  private messages: MessageParam[] = []
+  private systemPrompt: string
+
+  constructor(systemPrompt: string) {
+    this.systemPrompt = systemPrompt
   }
 
-  try {
-    const { system, user } = buildReactionPrompt(ctx)
+  async chat(userMessage: string): Promise<AIResponse | null> {
+    this.messages.push({ role: 'user', content: userMessage })
 
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 200,
-      system,
-      messages: [{ role: 'user', content: user }],
-    })
-
-    const text = (response.content[0] as { type: string; text: string }).text
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      console.warn('[AI Brain] 리액션 JSON 파싱 실패, fallback 사용:', text)
-      return fallbackReaction(ctx)
+    const client = getClient()
+    if (!client) {
+      return null
     }
 
-    const reaction = JSON.parse(jsonMatch[0]) as AIReaction
-    return validateReaction(reaction)
-  } catch (err) {
-    console.warn('[AI Brain] 리액션 API 호출 실패, fallback 사용:', err)
-    return fallbackReaction(ctx)
+    try {
+      const response = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 300,
+        system: this.systemPrompt,
+        messages: this.messages,
+      })
+
+      const text = (response.content[0] as { type: string; text: string }).text
+      this.messages.push({ role: 'assistant', content: text })
+
+      const jsonMatch = text.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) {
+        console.warn('[AI Conversation] JSON 파싱 실패:', text)
+        return null
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]) as AIResponse
+      return validateResponse(parsed)
+    } catch (err) {
+      console.warn('[AI Conversation] API 호출 실패:', err)
+      return null
+    }
+  }
+
+  addAssistantMessage(response: AIResponse): void {
+    this.messages.push({
+      role: 'assistant',
+      content: JSON.stringify(response),
+    })
+  }
+
+  reset(): void {
+    this.messages = []
   }
 }
