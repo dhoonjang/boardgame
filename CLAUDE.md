@@ -30,7 +30,7 @@ boardgame/
 
 ### 현재 게임
 - **forgod**: For God - 신과 마왕 사이에서 운명을 선택하는 3~6인용 전략 보드게임 (core + server + UI)
-- **duel**: Bluff Duel - 인디언 포커 스타일 2인 블러프 카드 게임 (server + UI, 게임 로직은 server 내부)
+- **indian-poker**: Indian Poker - 캐릭터 AI와 함께하는 2인 인디언 포커 카드 게임 (server + UI, 게임 로직은 server 내부)
 
 ## 패키지 구조 패턴
 
@@ -43,13 +43,13 @@ boardgame/
 | `forgod-core` | 게임 로직 | 순수 TypeScript, tsup 빌드, Vitest 테스트 |
 | `forgod-server` | HTTP API 서버 | Hono + @hono/node-server + Zod |
 
-**duel** (서버 통합형):
+**indian-poker** (서버 통합형):
 | 패키지 | 역할 | 기술 스택 |
 |--------|------|-----------|
-| `duel` | 웹 UI | Vite + React + Zustand + Tailwind |
-| `duel-server` | 서버 + 게임 로직 | Socket.IO + Hono + Zod, 게임 로직은 `src/game/` |
+| `indian-poker` | 웹 UI | Vite + React + Zustand + Tailwind |
+| `indian-poker-server` (= `@indian-poker/server`) | 서버 + 게임 로직 + AI 캐릭터 | Socket.IO + Hono + Zod + Anthropic SDK |
 
-duel 의존성: `duel` → `@duel/server/game` (타입만, vite alias로 소스 직접 참조)
+indian-poker 의존성: `indian-poker` → `@indian-poker/server/game` (타입만, vite alias로 소스 직접 참조)
 
 ## 공통 명령어
 
@@ -90,27 +90,27 @@ pnpm --filter @forgod/core test
 pnpm --filter @forgod/server start
 ```
 
-## duel 게임 명령어
+## indian-poker 게임 명령어
 
 ```bash
 # 개발
-pnpm duel:dev            # duel 개발 서버 (Vite HMR)
-pnpm duel:server:dev     # duel Socket.IO 서버 개발 모드 (watch)
+pnpm indian-poker:dev            # indian-poker 개발 서버 (Vite HMR)
+pnpm indian-poker:server:dev     # indian-poker Socket.IO 서버 개발 모드 (watch)
 
 # 빌드
-pnpm duel:build          # 전체 빌드 (server → duel 순서)
+pnpm indian-poker:build          # 전체 빌드 (server → indian-poker 순서)
 
 # 테스트
-pnpm duel:test           # duel-server 테스트 (게임 로직 + 서버)
+pnpm indian-poker:test           # indian-poker-server 테스트 (게임 로직 + 서버)
 
 # 서버
-pnpm duel:server         # duel 서버 시작 (포트 3002)
+pnpm indian-poker:server         # indian-poker 서버 시작 (포트 3002)
 
 # 개별 패키지
-pnpm --filter duel dev
-pnpm --filter @duel/server build
-pnpm --filter @duel/server test
-pnpm --filter @duel/server start
+pnpm --filter indian-poker dev
+pnpm --filter @indian-poker/server build
+pnpm --filter @indian-poker/server test
+pnpm --filter @indian-poker/server start
 ```
 
 ## 새 게임 추가 시
@@ -119,6 +119,26 @@ pnpm --filter @duel/server start
 2. `packages/<game>-core/` - 게임 로직 패키지 생성
 3. 루트 `package.json`에 편의 스크립트 추가 (`<game>:dev`, `<game>:build`, `<game>:test`)
 4. 게임별 `CLAUDE.md` 작성 (게임 규칙, 타입 구조 등)
+
+## AI 캐릭터 이미지 생성
+
+캐릭터 표정 이미지를 Vertex AI (Gemini)로 자동 생성하는 스크립트:
+
+```bash
+# 전체 표정 20개 생성
+npx tsx scripts/generate-character-images.ts --character <character-id>
+
+# 특정 표정만 생성
+npx tsx scripts/generate-character-images.ts --character <character-id> --expressions poker_face,confident
+
+# 기존 이미지 덮어쓰기
+npx tsx scripts/generate-character-images.ts --character <character-id> --force
+```
+
+- 레퍼런스 이미지: `scripts/references/{character-id}.{jpg,png,webp}`
+- 출력: `packages/indian-poker/public/characters/{character-id}/{expression}.png` (20개)
+- 파이프라인: Gemini 이미지 생성 → rembg 배경 제거 → PIL 정사각형 패딩
+- 필요: gcloud CLI 인증, Python (rembg, PIL)
 
 ## 기술 스택
 

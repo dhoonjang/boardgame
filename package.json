@@ -12,13 +12,13 @@
     "forgod:server:dev": "pnpm --filter @forgod/server dev",
     "forgod:server:test": "pnpm --filter @forgod/server test",
     "forgod:server:build": "pnpm --filter @forgod/server build",
-    "duel:dev": "pnpm --filter duel dev",
-    "duel:build": "pnpm --filter @duel/server build && pnpm --filter duel build",
-    "duel:test": "pnpm --filter @duel/server test",
-    "duel:server": "pnpm --filter @duel/server start",
-    "duel:server:dev": "pnpm --filter @duel/server dev",
-    "duel:server:test": "pnpm --filter @duel/server test",
-    "duel:server:build": "pnpm --filter @duel/server build"
+    "indian-poker:dev": "pnpm --filter indian-poker dev",
+    "indian-poker:build": "pnpm --filter @indian-poker/server build && pnpm --filter indian-poker build",
+    "indian-poker:test": "pnpm --filter @indian-poker/server test",
+    "indian-poker:server": "pnpm --filter @indian-poker/server start",
+    "indian-poker:server:dev": "pnpm --filter @indian-poker/server dev",
+    "indian-poker:server:test": "pnpm --filter @indian-poker/server test",
+    "indian-poker:server:build": "pnpm --filter @indian-poker/server build"
   },
   "devDependencies": {
     "turbo": "^2.3.0"

@@ -30,3 +30,6 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+# AI game logs
+packages/indian-poker-server/logs/
