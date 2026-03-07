@@ -9,7 +9,7 @@ export default function MyArea({ me }: Props) {
     <div className="flex items-center justify-between px-4 py-2">
       <div className="flex items-center gap-2">
         <span className="text-sm font-semibold text-poker-accent">{me.name}</span>
-        <span className="text-sm text-poker-accent font-semibold">🪙 {me.chips}</span>
+        <span data-testid="my-chips" className="text-sm text-poker-accent font-semibold">🪙 {me.chips}</span>
       </div>
     </div>
   )

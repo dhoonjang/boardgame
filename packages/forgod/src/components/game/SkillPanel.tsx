@@ -1,6 +1,6 @@
 import clsx from 'clsx'
-import type { Player, Skill, ValidAction, HexCoord } from '@forgod/core'
-import { SKILLS_BY_CLASS, getNeighbors } from '@forgod/core'
+import type { Player, Skill, ValidAction, HexCoord } from '@forgod/server/game'
+import { SKILLS_BY_CLASS, getNeighbors } from '@forgod/server/game'
 import { useGameStore } from '../../store/gameStore'
 import Tooltip from '../ui/Tooltip'
 

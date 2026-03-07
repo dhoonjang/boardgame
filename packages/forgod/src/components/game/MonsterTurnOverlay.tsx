@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion'
-import type { Monster } from '@forgod/core'
+import type { Monster } from '@forgod/server/game'
 import DiceDisplay from '../ui/DiceDisplay'
 
 interface MonsterTurnOverlayProps {

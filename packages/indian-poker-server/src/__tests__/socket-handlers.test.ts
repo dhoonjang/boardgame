@@ -1,150 +1,170 @@
-import { describe, it, expect, afterEach } from 'vitest'
-import { createServer, type Server as HttpServer } from 'http'
-import { Server } from 'socket.io'
-import { io as ioc, type Socket as ClientSocket } from 'socket.io-client'
+import { describe, it, expect, beforeEach } from 'vitest'
+import type { Server, Socket } from 'socket.io'
 import { SessionManager } from '../session'
 import { registerSocketHandlers } from '../socket-handlers'
 import type { PlayerView } from '../game'
 
-let portCounter = 3100
+type EventHandler = (data?: any) => void
 
-function waitForEvent<T>(socket: ClientSocket, event: string, timeout = 3000): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Timeout waiting for ${event}`)), timeout)
-    socket.once(event, (data: T) => {
-      clearTimeout(timer)
-      resolve(data)
-    })
-  })
+class FakeSocket {
+  readonly received = new Map<string, unknown[]>()
+  readonly joinedRooms = new Set<string>()
+  private handlers = new Map<string, EventHandler>()
+
+  constructor(public readonly id: string) {}
+
+  on(event: string, handler: EventHandler): this {
+    this.handlers.set(event, handler)
+    return this
+  }
+
+  emit(event: string, data?: unknown): boolean {
+    const list = this.received.get(event) ?? []
+    list.push(data)
+    this.received.set(event, list)
+    return true
+  }
+
+  join(room: string): void {
+    this.joinedRooms.add(room)
+  }
+
+  leave(room: string): void {
+    this.joinedRooms.delete(room)
+  }
+
+  clientEmit(event: string, data?: unknown): void {
+    const handler = this.handlers.get(event)
+    if (!handler) {
+      throw new Error(`No server handler registered for event: ${event}`)
+    }
+    handler(data)
+  }
+
+  lastEvent<T>(event: string): T {
+    const list = this.received.get(event) ?? []
+    if (list.length === 0) {
+      throw new Error(`No emitted event found: ${event}`)
+    }
+    return list[list.length - 1] as T
+  }
 }
 
-/**
- * 테스트별로 독립된 서버 인스턴스를 생성하여 상태 격리
- */
-function createTestServer(): Promise<{
-  io: Server
-  httpServer: HttpServer
-  sessionManager: SessionManager
-  port: number
-}> {
-  return new Promise((resolve) => {
-    const port = portCounter++
-    const sessionManager = new SessionManager()
-    const httpServer = createServer()
-    const io = new Server(httpServer)
-    registerSocketHandlers(io, sessionManager)
-    httpServer.listen(port, () => resolve({ io, httpServer, sessionManager, port }))
-  })
-}
+class FakeIo {
+  private sockets = new Map<string, FakeSocket>()
+  private connectionHandler: ((socket: Socket) => void) | null = null
 
-function connectTo(port: number): ClientSocket {
-  return ioc(`http://localhost:${port}`, {
-    forceNew: true,
-    transports: ['websocket'],
-  })
+  on(event: string, handler: (socket: Socket) => void): this {
+    if (event === 'connection') {
+      this.connectionHandler = handler
+    }
+    return this
+  }
+
+  to(socketId: string): { emit: (event: string, data?: unknown) => void } {
+    return {
+      emit: (event: string, data?: unknown) => {
+        this.sockets.get(socketId)?.emit(event, data)
+      },
+    }
+  }
+
+  connect(socket: FakeSocket): FakeSocket {
+    this.sockets.set(socket.id, socket)
+    if (!this.connectionHandler) {
+      throw new Error('Connection handler is not registered')
+    }
+    this.connectionHandler(socket as unknown as Socket)
+    return socket
+  }
 }
 
 describe('Socket Handlers', () => {
-  let server: Awaited<ReturnType<typeof createTestServer>>
-  const clients: ClientSocket[] = []
+  let io: FakeIo
+  let sessionManager: SessionManager
 
-  afterEach(async () => {
-    for (const c of clients) c.disconnect()
-    clients.length = 0
-
-    if (server) {
-      server.io.close()
-      await new Promise<void>((resolve) => server.httpServer.close(() => resolve()))
-    }
+  beforeEach(() => {
+    io = new FakeIo()
+    sessionManager = new SessionManager()
+    registerSocketHandlers(io as unknown as Server, sessionManager)
   })
 
-  it('게임 생성 → game-created 이벤트', async () => {
-    server = await createTestServer()
-    const client = connectTo(server.port)
-    clients.push(client)
+  it('게임 생성 → game-created/game-state/valid-actions 전송', () => {
+    const client = io.connect(new FakeSocket('socket-1'))
 
-    await waitForEvent(client, 'connect')
-    client.emit('create-game', { player: { id: 'p1', name: 'Alice' } })
+    client.clientEmit('create-game', { player: { id: 'p1', name: 'Alice' } })
 
-    const data = await waitForEvent<{ gameId: string }>(client, 'game-created')
-    expect(data.gameId).toBeTruthy()
-    expect(data.gameId.length).toBe(4)
+    const created = client.lastEvent<{ gameId: string }>('game-created')
+    const gameState = client.lastEvent<{ playerView: PlayerView }>('game-state')
+    const validActions = client.lastEvent<{ actions: Array<{ type: string }> }>('valid-actions')
+
+    expect(created.gameId).toHaveLength(4)
+    expect(client.joinedRooms.has(created.gameId)).toBe(true)
+    expect(gameState.playerView.phase).toBe('waiting')
+    expect(gameState.playerView.me.name).toBe('Alice')
+    expect(validActions.actions).toEqual([])
   })
 
-  it('게임 생성 후 game-state 수신', async () => {
-    server = await createTestServer()
-    const client = connectTo(server.port)
-    clients.push(client)
+  it('상대 참가 시 양쪽에 game-state/opponent-joined 전송', () => {
+    const host = io.connect(new FakeSocket('socket-1'))
+    host.clientEmit('create-game', { player: { id: 'p1', name: 'Alice' } })
+    const { gameId } = host.lastEvent<{ gameId: string }>('game-created')
 
-    await waitForEvent(client, 'connect')
-    client.emit('create-game', { player: { id: 'p1', name: 'Alice' } })
+    const guest = io.connect(new FakeSocket('socket-2'))
+    guest.clientEmit('join-game', { gameId, player: { id: 'p2', name: 'Bob' } })
 
-    const state = await waitForEvent<{ playerView: PlayerView }>(client, 'game-state')
-    expect(state.playerView.phase).toBe('waiting')
-    expect(state.playerView.me.name).toBe('Alice')
+    const hostJoin = host.lastEvent<{ opponentName: string }>('opponent-joined')
+    const guestJoin = guest.lastEvent<{ opponentName: string }>('opponent-joined')
+    const hostState = host.lastEvent<{ playerView: PlayerView }>('game-state')
+    const guestState = guest.lastEvent<{ playerView: PlayerView }>('game-state')
+
+    expect(hostJoin.opponentName).toBe('Bob')
+    expect(guestJoin.opponentName).toBe('Alice')
+    expect(hostState.playerView.phase).toBe('waiting')
+    expect(guestState.playerView.phase).toBe('waiting')
+    expect(guest.joinedRooms.has(gameId)).toBe(true)
   })
 
-  it('상대 참가 → opponent-joined 이벤트', async () => {
-    server = await createTestServer()
+  it('START_ROUND 액션 성공 시 양쪽에 betting 상태 브로드캐스트', () => {
+    const host = io.connect(new FakeSocket('socket-1'))
+    host.clientEmit('create-game', { player: { id: 'p1', name: 'Alice' } })
+    const { gameId } = host.lastEvent<{ gameId: string }>('game-created')
 
-    const client1 = connectTo(server.port)
-    clients.push(client1)
-    await waitForEvent(client1, 'connect')
+    const guest = io.connect(new FakeSocket('socket-2'))
+    guest.clientEmit('join-game', { gameId, player: { id: 'p2', name: 'Bob' } })
 
-    client1.emit('create-game', { player: { id: 'p1', name: 'Alice' } })
-    const { gameId } = await waitForEvent<{ gameId: string }>(client1, 'game-created')
+    host.clientEmit('game-action', { action: { type: 'START_ROUND' } })
 
-    // 참가 알림 리스너를 미리 등록
-    const joinPromise = waitForEvent<{ opponentName: string }>(client1, 'opponent-joined')
+    const hostAction = host.lastEvent<{ success: boolean }>('action-result')
+    const hostState = host.lastEvent<{ playerView: PlayerView }>('game-state')
+    const guestState = guest.lastEvent<{ playerView: PlayerView }>('game-state')
 
-    const client2 = connectTo(server.port)
-    clients.push(client2)
-    await waitForEvent(client2, 'connect')
-
-    client2.emit('join-game', { gameId, player: { id: 'p2', name: 'Bob' } })
-
-    const joinData = await joinPromise
-    expect(joinData.opponentName).toBe('Bob')
+    expect(hostAction.success).toBe(true)
+    expect(hostState.playerView.phase).toBe('betting')
+    expect(guestState.playerView.phase).toBe('betting')
+    expect(hostState.playerView.opponentCard).not.toBeNull()
+    expect(guestState.playerView.opponentCard).not.toBeNull()
   })
 
-  it('게임 액션 실행 → 양쪽에 game-state 전송', async () => {
-    server = await createTestServer()
+  it('체크 불가 상황에서 CALL 액션 거부', () => {
+    const host = io.connect(new FakeSocket('socket-1'))
+    host.clientEmit('create-game', { player: { id: 'p1', name: 'Alice' } })
+    const { gameId } = host.lastEvent<{ gameId: string }>('game-created')
 
-    // client1 생성 & 게임 생성
-    const client1 = connectTo(server.port)
-    clients.push(client1)
-    await waitForEvent(client1, 'connect')
+    const guest = io.connect(new FakeSocket('socket-2'))
+    guest.clientEmit('join-game', { gameId, player: { id: 'p2', name: 'Bob' } })
 
-    client1.emit('create-game', { player: { id: 'p1', name: 'Alice' } })
-    const { gameId } = await waitForEvent<{ gameId: string }>(client1, 'game-created')
+    host.clientEmit('game-action', { action: { type: 'START_ROUND' } })
+    const beforePhase = host.lastEvent<{ playerView: PlayerView }>('game-state').playerView.phase
 
-    // client2 참가
-    const client2 = connectTo(server.port)
-    clients.push(client2)
-    await waitForEvent(client2, 'connect')
+    host.clientEmit('game-action', { action: { type: 'CALL' } })
 
-    // join 후 양쪽에 game-state가 올 것이므로 미리 리스너 등록
-    const joinState1 = waitForEvent<{ playerView: PlayerView }>(client1, 'game-state')
-    const joinState2 = waitForEvent<{ playerView: PlayerView }>(client2, 'game-state')
+    const action = host.lastEvent<{ success: boolean; message: string }>('action-result')
+    const afterPhase = host.lastEvent<{ playerView: PlayerView }>('game-state').playerView.phase
 
-    client2.emit('join-game', { gameId, player: { id: 'p2', name: 'Bob' } })
-
-    // join 시 발생하는 game-state 소비
-    await Promise.all([joinState1, joinState2])
-
-    // START_ROUND 액션 전 리스너 등록
-    const actionState1 = waitForEvent<{ playerView: PlayerView }>(client1, 'game-state')
-    const actionState2 = waitForEvent<{ playerView: PlayerView }>(client2, 'game-state')
-
-    client1.emit('game-action', { action: { type: 'START_ROUND' } })
-
-    const [state1, state2] = await Promise.all([actionState1, actionState2])
-
-    expect(state1.playerView.phase).toBe('betting')
-    expect(state2.playerView.phase).toBe('betting')
-
-    // 핵심: 상대 카드는 보임 (인디언 포커)
-    expect(state1.playerView.opponentCard).not.toBeNull()
-    expect(state2.playerView.opponentCard).not.toBeNull()
+    expect(beforePhase).toBe('betting')
+    expect(action.success).toBe(false)
+    expect(action.message).toContain('콜')
+    expect(afterPhase).toBe('betting')
   })
 })

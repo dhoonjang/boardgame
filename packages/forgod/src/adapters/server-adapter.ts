@@ -1,4 +1,4 @@
-import type { GameState, GameAction, GameEvent, ValidAction } from '@forgod/core'
+import type { GameState, GameAction, GameEvent, ValidAction } from '@forgod/server/game'
 import type { GameAdapter, CreateGameParams, ActionResult } from './types'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001'

@@ -160,7 +160,7 @@ describe('스킬 시스템', () => {
         expect(result.message).toContain('2칸')
       })
 
-      it('돌진 후 원하는 스킬 쿨 1 감소', () => {
+      it('돌진 후 선택한 스킬 쿨 1 감소', () => {
         let state = createSkillTestState({
           heroClass: 'warrior',
           playerPosition: { q: 0, r: 0 },
@@ -175,36 +175,62 @@ describe('스킬 시스템', () => {
               : p
           ),
         }
-        const result = useSkill(state, 'warrior-charge', 'target-1')
+        const result = useSkill(state, 'warrior-charge', 'target-1', undefined, 'warrior-power-strike')
         expect(result.success).toBe(true)
         const player = result.newState.players.find(p => p.id === 'player-1')!
         expect(player.skillCooldowns['warrior-power-strike']).toBe(2)
       })
+
+      it('줄일 쿨다운이 있으면 선택하지 않을 때 실패', () => {
+        let state = createSkillTestState({
+          heroClass: 'warrior',
+          playerPosition: { q: 0, r: 0 },
+          targetPosition: { q: 2, r: 0 },
+        })
+        state = {
+          ...state,
+          players: state.players.map(p =>
+            p.id === 'player-1'
+              ? { ...p, skillCooldowns: { 'warrior-power-strike': 2 } }
+              : p
+          ),
+        }
+
+        const result = useSkill(state, 'warrior-charge', 'target-1')
+        expect(result.success).toBe(false)
+        expect(result.message).toContain('선택')
+      })
     })
 
     describe('일격 필살 (warrior-power-strike)', () => {
-      it('인접 대상에게 힘x2 피해', () => {
+      it('사용 시 다음 기본공격 강화 버프를 획득한다', () => {
+        const state = createSkillTestState({
+          heroClass: 'warrior',
+        })
+        const result = useSkill(state, 'warrior-power-strike')
+        expect(result.success).toBe(true)
+        const player = result.newState.players.find(p => p.id === 'player-1')!
+        expect(player.warriorPowerStrikeActive).toBe(true)
+      })
+
+      it('기본공격 후 버프가 소모되고 힘x2가 적용된다', () => {
         const state = createSkillTestState({
           heroClass: 'warrior',
           stats: { strength: [3, 3] as [number, number] },
           playerPosition: { q: 0, r: 0 },
           targetPosition: { q: 1, r: 0 },
         })
-        const result = useSkill(state, 'warrior-power-strike', 'target-1')
-        expect(result.success).toBe(true)
-        const target = result.newState.players.find(p => p.id === 'target-1')!
-        expect(target.health).toBe(30 - 12) // 힘 6 * 2 = 12
-      })
+        const buffed = useSkill(state, 'warrior-power-strike')
+        expect(buffed.success).toBe(true)
 
-      it('비인접 실패', () => {
-        const state = createSkillTestState({
-          heroClass: 'warrior',
-          playerPosition: { q: 0, r: 0 },
-          targetPosition: { q: 2, r: 0 },
-        })
-        const result = useSkill(state, 'warrior-power-strike', 'target-1')
-        expect(result.success).toBe(false)
-        expect(result.message).toContain('인접')
+        const engine = new GameEngine()
+        const attack = engine.executeAction(buffed.newState, { type: 'BASIC_ATTACK', targetId: 'target-1' })
+        expect(attack.success).toBe(true)
+
+        const target = attack.newState.players.find(p => p.id === 'target-1')!
+        expect(target.health).toBe(30 - 12)
+        const player = attack.newState.players.find(p => p.id === 'player-1')!
+        expect(player.warriorPowerStrikeActive).toBe(false)
       })
     })
 
@@ -358,6 +384,45 @@ describe('스킬 시스템', () => {
         const result = useSkill(state, 'mage-magic-arrow', 'target-1')
         expect(result.success).toBe(false)
       })
+
+      it('은신 대상은 지정할 수 없다', () => {
+        let state = createSkillTestState({
+          heroClass: 'mage',
+          playerPosition: { q: 0, r: 0 },
+          targetPosition: { q: 1, r: 0 },
+        })
+        state = {
+          ...state,
+          players: state.players.map(p =>
+            p.id === 'target-1' ? { ...p, isStealthed: true } : p
+          ),
+        }
+        const result = useSkill(state, 'mage-magic-arrow', 'target-1')
+        expect(result.success).toBe(false)
+        expect(result.message).toContain('은신')
+      })
+
+      it('강화 + 분신 상태면 분신 기준 사거리로 공격한다', () => {
+        let state = createSkillTestState({
+          heroClass: 'mage',
+          stats: { intelligence: [4, 4] as [number, number] },
+          playerPosition: { q: 0, r: 0 },
+          targetPosition: { q: 4, r: 0 },
+        })
+        state = {
+          ...state,
+          clones: [{ playerId: 'player-1', position: { q: 3, r: 0 } }],
+          players: state.players.map(p =>
+            p.id === 'player-1' ? { ...p, isEnhanced: true } : p
+          ),
+        }
+        const result = useSkill(state, 'mage-magic-arrow', 'target-1')
+        expect(result.success).toBe(true)
+        const target = result.newState.players.find(p => p.id === 'target-1')!
+        expect(target.health).toBe(30 - 8)
+        const player = result.newState.players.find(p => p.id === 'player-1')!
+        expect(player.isEnhanced).toBe(false)
+      })
     })
 
     describe('분신 (mage-clone)', () => {
@@ -387,6 +452,47 @@ describe('스킬 시스템', () => {
         expect(result.success).toBe(true)
         const target = result.newState.players.find(p => p.id === 'target-1')!
         expect(target.health).toBe(30 - 8)
+      })
+
+      it('강화 시 피해 대상을 한 칸 밀어낸다', () => {
+        let state = createSkillTestState({
+          heroClass: 'mage',
+          stats: { intelligence: [4, 4] as [number, number] },
+          playerPosition: { q: 0, r: 0 },
+          targetPosition: { q: 1, r: 0 },
+        })
+        state = {
+          ...state,
+          players: state.players.map(p =>
+            p.id === 'player-1' ? { ...p, isEnhanced: true } : p
+          ),
+        }
+        const result = useSkill(state, 'mage-burst')
+        expect(result.success).toBe(true)
+        const target = result.newState.players.find(p => p.id === 'target-1')!
+        expect(target.position).toEqual({ q: 2, r: 0 })
+        const player = result.newState.players.find(p => p.id === 'player-1')!
+        expect(player.isEnhanced).toBe(false)
+      })
+
+      it('은신 대상도 범위 피해를 받고 은신이 해제된다', () => {
+        let state = createSkillTestState({
+          heroClass: 'mage',
+          stats: { intelligence: [4, 4] as [number, number] },
+          playerPosition: { q: 0, r: 0 },
+          targetPosition: { q: 1, r: 0 },
+        })
+        state = {
+          ...state,
+          players: state.players.map(p =>
+            p.id === 'target-1' ? { ...p, isStealthed: true } : p
+          ),
+        }
+        const result = useSkill(state, 'mage-burst')
+        expect(result.success).toBe(true)
+        const target = result.newState.players.find(p => p.id === 'target-1')!
+        expect(target.health).toBe(30 - 8)
+        expect(target.isStealthed).toBe(false)
       })
     })
 

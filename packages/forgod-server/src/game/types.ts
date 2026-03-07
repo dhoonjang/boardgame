@@ -91,6 +91,7 @@ export interface Player {
   // 버프/상태 필드
   ironStanceActive: boolean        // 무적 태세 활성 (피해를 힘 수치만큼 감소)
   poisonActive: boolean            // 독 바르기 활성 (다음 기본공격에 소모)
+  warriorPowerStrikeActive: boolean // 일격 필살 버프 (다음 기본공격 강화)
   isStealthed: boolean             // 은신 활성 (모든 피해 면역)
   isEnhanced: boolean              // 스킬 강화 활성 (다음 1회 스킬에 소모)
   isBound: boolean                 // 속박 (다음 턴 이동 불가, 이후 해제)
@@ -193,7 +194,7 @@ export type GameAction =
   | { type: 'END_MOVE_PHASE' }  // 이동 페이즈 종료 → action 페이즈로 전환
   | { type: 'END_TURN' }        // action 페이즈에서 턴 종료
   | { type: 'BASIC_ATTACK'; targetId: string }
-  | { type: 'USE_SKILL'; skillId: string; targetId?: string; position?: HexCoord }
+  | { type: 'USE_SKILL'; skillId: string; targetId?: string; position?: HexCoord; reduceCooldownSkillId?: string }
   | { type: 'ROLL_STAT_DICE'; stat: keyof Stats }
   | { type: 'COMPLETE_REVELATION'; revelationId: string }
   | { type: 'APPLY_CORRUPT_DICE'; stat: keyof Stats }  // 타락 주사위 능력치에 적용

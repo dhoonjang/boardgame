@@ -1,5 +1,5 @@
-import type { HexCoord, HexTile, TileType } from '@forgod/core'
-import { TERRAIN_MOVEMENT_COST, getNeighbors } from '@forgod/core'
+import type { HexCoord, HexTile, TileType } from '@forgod/server/game'
+import { TERRAIN_MOVEMENT_COST, getNeighbors } from '@forgod/server/game'
 import { colors } from '../styles/theme'
 
 const HILL_MINIMUM_MOVEMENT = 3

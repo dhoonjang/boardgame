@@ -1,4 +1,4 @@
-import type { GameState, GameAction, GameEvent, ValidAction, HeroClass } from '@forgod/core'
+import type { GameState, GameAction, GameEvent, ValidAction, HeroClass } from '@forgod/server/game'
 
 export interface CreateGameParams {
   players: Array<{ id: string; name: string; heroClass: HeroClass }>

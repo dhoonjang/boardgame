@@ -16,7 +16,8 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@forgod/server/game": ["../forgod-server/dist/game/index.d.ts"]
     }
   },
   "include": ["src"],

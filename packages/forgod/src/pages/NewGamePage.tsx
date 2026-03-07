@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import type { HeroClass } from '@forgod/core'
+import type { HeroClass } from '@forgod/server/game'
 import { useGameStore } from '../store/gameStore'
 import RetroButton from '../components/ui/RetroButton'
 import RetroPanel from '../components/ui/RetroPanel'

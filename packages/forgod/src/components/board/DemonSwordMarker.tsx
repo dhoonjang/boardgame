@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import type { HexCoord } from '@forgod/core'
+import type { HexCoord } from '@forgod/server/game'
 import { axialToPixel } from '../../utils/hexUtils'
 
 interface DemonSwordMarkerProps {

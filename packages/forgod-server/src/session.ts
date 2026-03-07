@@ -1,4 +1,4 @@
-import { GameEngine, type GameState, type CreateGameOptions } from '@forgod/core'
+import { GameEngine, type GameState, type CreateGameOptions } from './game'
 
 export interface GameSummary {
   gameId: string

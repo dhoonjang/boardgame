@@ -1,5 +1,5 @@
-import type { Player, Skill } from '@forgod/core'
-import { SKILLS_BY_CLASS } from '@forgod/core'
+import type { Player, Skill } from '@forgod/server/game'
+import { SKILLS_BY_CLASS } from '@forgod/server/game'
 import HealthBar from '../ui/HealthBar'
 import Badge from '../ui/Badge'
 import DiceDisplay from '../ui/DiceDisplay'

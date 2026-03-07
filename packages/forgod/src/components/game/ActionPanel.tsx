@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import type { ValidAction, HexCoord } from '@forgod/core'
+import type { ValidAction, HexCoord } from '@forgod/server/game'
 import { useGameStore } from '../../store/gameStore'
 import { getReachableTiles } from '../../utils/hexUtils'
 import RetroButton from '../ui/RetroButton'

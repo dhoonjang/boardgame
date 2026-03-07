@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import type { CloneInfo, Player } from '@forgod/core'
+import type { CloneInfo, Player } from '@forgod/server/game'
 import { axialToPixel } from '../../utils/hexUtils'
 
 interface CloneTokenProps {

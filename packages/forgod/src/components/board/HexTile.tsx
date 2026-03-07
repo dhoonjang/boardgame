@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import type { HexTile as HexTileType, HeroClass } from '@forgod/core'
+import type { HexTile as HexTileType, HeroClass } from '@forgod/server/game'
 import { axialToPixel, getHexCorners, TILE_COLORS, CLASS_COLORS } from '../../utils/hexUtils'
 import { getTileIcon } from './TileIcons'
 

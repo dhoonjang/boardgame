@@ -38,6 +38,14 @@ describe('Betting', () => {
   })
 
   describe('CALL', () => {
+    it('첫 행동에서는 CALL 불가 (체크 없음)', () => {
+      const { engine, state } = setupBetting()
+
+      const result = engine.executeAction(state, { type: 'CALL' })
+      expect(result.success).toBe(false)
+      expect(result.newState.phase).toBe('betting')
+    })
+
     it('레이즈 후 콜하면 쇼다운', () => {
       const { engine, state } = setupBetting()
 

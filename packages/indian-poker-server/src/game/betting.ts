@@ -71,6 +71,11 @@ export function executeCall(state: GameState, playerId: string): ActionResult {
   const opponent = state.players[1 - playerIndex]
   const callAmount = opponent.currentBet - player.currentBet
 
+  // 체크 룰 없음: 상대가 베팅하지 않았다면 CALL 불가
+  if (callAmount <= 0) {
+    return { success: false, newState: state, message: '콜할 베팅이 없습니다.', events: [] }
+  }
+
   // 칩이 부족하면 올인 (가진 만큼만 콜)
   const actualCallAmount = Math.min(callAmount, player.chips)
 

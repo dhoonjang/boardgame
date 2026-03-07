@@ -35,6 +35,7 @@ export default function RoundResultPopup({ result, myIndex, myName, opponentName
 
   return (
     <div
+      data-testid="round-result-modal"
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-40 cursor-pointer"
       onClick={onDismiss}
     >
@@ -65,6 +66,7 @@ export default function RoundResultPopup({ result, myIndex, myName, opponentName
         )}
 
         <button
+          data-testid="round-result-confirm"
           onClick={onDismiss}
           className="w-full px-4 py-2 bg-poker-accent hover:bg-amber-600 text-white font-semibold rounded-lg transition-colors"
         >

@@ -1,4 +1,4 @@
-import type { GameEvent } from '@forgod/core'
+import type { GameEvent } from '@forgod/server/game'
 
 export function eventToKorean(event: GameEvent): string {
   switch (event.type) {

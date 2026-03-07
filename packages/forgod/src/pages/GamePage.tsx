@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import type { HexCoord, Revelation } from '@forgod/core'
+import type { HexCoord, Revelation } from '@forgod/server/game'
 import { useGameStore } from '../store/gameStore'
 import { useUIStore } from '../store/uiStore'
 import HexBoard from '../components/board/HexBoard'

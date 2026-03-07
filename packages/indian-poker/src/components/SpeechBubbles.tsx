@@ -88,10 +88,11 @@ export default function SpeechBubbles({ messages, sender, className = '' }: Prop
   if (visible.length === 0) return null
 
   return (
-    <div className={`flex flex-col ${className}`}>
+    <div data-testid={`speech-bubbles-${sender}`} className={`flex flex-col ${className}`}>
       {visible.map((v, i) => (
         <div
           key={v.index}
+          data-testid={`speech-bubble-${sender}`}
           className={`overflow-hidden transition-all duration-300 ease-out ${
             v.fading ? '' : 'animate-bubble-in'
           }`}

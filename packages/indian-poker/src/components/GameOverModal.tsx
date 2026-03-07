@@ -37,7 +37,7 @@ export default function GameOverModal({ view, myPlayerId, onGoHome, onContinueCh
   const lastRound = view.roundHistory[view.roundHistory.length - 1] as RoundResult | undefined
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+    <div data-testid="game-over-modal" className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
       <div className="bg-poker-surface border border-poker-border rounded-2xl p-8 max-w-sm w-full mx-4 text-center">
         <h2 className="text-3xl font-extrabold mb-4">
           {draw ? (

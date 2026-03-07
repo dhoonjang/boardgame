@@ -66,7 +66,8 @@ export function useSkill(
   state: GameState,
   skillId: string,
   targetId?: string,
-  position?: HexCoord
+  position?: HexCoord,
+  reduceCooldownSkillId?: string
 ): SkillResult {
   const currentPlayer = getCurrentPlayer(state)
 
@@ -104,9 +105,9 @@ export function useSkill(
   switch (skillId) {
     // ===== 전사 스킬 =====
     case 'warrior-charge':
-      return handleWarriorCharge(state, currentPlayer, targetId)
+      return handleWarriorCharge(state, currentPlayer, targetId, reduceCooldownSkillId)
     case 'warrior-power-strike':
-      return handleWarriorPowerStrike(state, currentPlayer, targetId)
+      return handleWarriorPowerStrike(state, currentPlayer)
     case 'warrior-throw':
       return handleWarriorThrow(state, currentPlayer, targetId, position)
     case 'warrior-iron-stance':
@@ -177,12 +178,37 @@ function getStatTotal(stat: [number, number]): number {
   return stat[0] + stat[1]
 }
 
+function canTargetStealthedPlayer(target: Player): boolean {
+  return !target.isStealthed
+}
+
+function isWalkableTileType(type: string): boolean {
+  return type !== 'mountain' && type !== 'lake' && type !== 'monster'
+}
+
+function isOccupiedByAlivePlayer(state: GameState, position: HexCoord, exceptPlayerId?: string): boolean {
+  return state.players.some(
+    p => !p.isDead && p.id !== exceptPlayerId && coordEquals(p.position, position)
+  )
+}
+
+function isOccupiedByAliveMonster(state: GameState, position: HexCoord, exceptMonsterId?: string): boolean {
+  return state.monsters.some(
+    m => !m.isDead && m.id !== exceptMonsterId && coordEquals(m.position, position)
+  )
+}
+
 // ===== 전사 스킬 =====
 
 /**
  * 돌진 (warrior-charge): 2칸 떨어진 대상에 근접한다. 원하는 스킬의 쿨을 1 줄인다.
  */
-function handleWarriorCharge(state: GameState, player: Player, targetId?: string): SkillResult {
+function handleWarriorCharge(
+  state: GameState,
+  player: Player,
+  targetId?: string,
+  reduceCooldownSkillId?: string
+): SkillResult {
   if (!targetId) {
     return { success: false, newState: state, message: '대상을 지정해야 합니다.', events: [] }
   }
@@ -232,10 +258,30 @@ function handleWarriorCharge(state: GameState, player: Player, targetId?: string
   }
   events.push({ type: 'PLAYER_MOVED', playerId: player.id, from: player.position, to: newPosition })
 
-  // TODO: 스킬 쿨다운 감소 선택 UI 필요 (일단 자동으로 첫 번째 쿨다운 중인 스킬 감소)
-  const cooldownSkillId = Object.keys(player.skillCooldowns).find(
-    sid => player.skillCooldowns[sid] > 0
-  )
+  const reducibleSkills = Object.entries(player.skillCooldowns)
+    .filter(([sid, cooldown]) => sid !== 'warrior-charge' && cooldown > 0)
+    .map(([sid]) => sid)
+
+  if (reducibleSkills.length > 0) {
+    if (!reduceCooldownSkillId) {
+      return {
+        success: false,
+        newState: state,
+        message: '돌진으로 줄일 스킬을 선택해야 합니다.',
+        events: [],
+      }
+    }
+    if (!reducibleSkills.includes(reduceCooldownSkillId)) {
+      return {
+        success: false,
+        newState: state,
+        message: '선택한 스킬의 쿨다운을 줄일 수 없습니다.',
+        events: [],
+      }
+    }
+  }
+
+  const cooldownSkillId = reduceCooldownSkillId
   if (cooldownSkillId) {
     newState = {
       ...newState,
@@ -264,69 +310,20 @@ function handleWarriorCharge(state: GameState, player: Player, targetId?: string
 /**
  * 일격 필살 (warrior-power-strike): 기본 공격의 피해에 힘 수치를 더한다.
  */
-function handleWarriorPowerStrike(state: GameState, player: Player, targetId?: string): SkillResult {
-  if (!targetId) {
-    return { success: false, newState: state, message: '대상을 지정해야 합니다.', events: [] }
-  }
-
-  const target = state.players.find(p => p.id === targetId) ?? state.monsters.find(m => m.id === targetId)
-  if (!target) {
-    return { success: false, newState: state, message: '대상을 찾을 수 없습니다.', events: [] }
-  }
-
-  const targetPosition = target.position
-  if (getDistance(player.position, targetPosition) !== 1) {
-    return { success: false, newState: state, message: '인접한 대상만 공격할 수 있습니다.', events: [] }
-  }
-
-  // 피해 = 힘(주사위 합) + 힘(주사위 합) = 힘 x 2
-  const strengthTotal = getStatTotal(player.stats.strength)
-  const damage = strengthTotal * 2
-
-  const events: GameEvent[] = []
+function handleWarriorPowerStrike(state: GameState, player: Player): SkillResult {
   let newState = applySkillUsage(state, player.id, 'warrior-power-strike')
-
-  if ('heroClass' in target) {
-    // 플레이어 대상
-    const newHealth = Math.max(0, target.health - damage)
-    const isDead = newHealth <= 0
-
-    newState = {
-      ...newState,
-      players: newState.players.map(p =>
-        p.id === targetId
-          ? { ...p, health: newHealth, isDead, deathTurnsRemaining: isDead ? 3 : p.deathTurnsRemaining }
-          : p
-      ),
-    }
-
-    events.push({ type: 'PLAYER_ATTACKED', attackerId: player.id, targetId, damage })
-    if (isDead) events.push({ type: 'PLAYER_DIED', playerId: targetId })
-  } else {
-    // 몬스터 대상
-    const actualDamage = Math.min(damage, target.health)
-    const newHealth = Math.max(0, target.health - damage)
-    const isDead = newHealth <= 0
-
-    newState = {
-      ...newState,
-      monsters: newState.monsters.map(m =>
-        m.id === targetId ? { ...m, health: newHealth, isDead } : m
-      ),
-      players: newState.players.map(p =>
-        p.id === player.id ? { ...p, monsterEssence: p.monsterEssence + actualDamage } : p
-      ),
-    }
-
-    events.push({ type: 'PLAYER_ATTACKED', attackerId: player.id, targetId, damage })
-    if (isDead) events.push({ type: 'MONSTER_DIED', monsterId: targetId })
+  newState = {
+    ...newState,
+    players: newState.players.map(p =>
+      p.id === player.id ? { ...p, warriorPowerStrikeActive: true } : p
+    ),
   }
 
   return {
     success: true,
     newState,
-    message: `일격 필살! ${damage}의 피해를 입혔습니다.`,
-    events,
+    message: '일격 필살! 다음 기본 공격이 강화됩니다.',
+    events: [],
   }
 }
 
@@ -346,6 +343,9 @@ function handleWarriorThrow(
   const target = state.players.find(p => p.id === targetId)
   if (!target) {
     return { success: false, newState: state, message: '플레이어만 던질 수 있습니다.', events: [] }
+  }
+  if (!canTargetStealthedPlayer(target)) {
+    return { success: false, newState: state, message: '은신 중인 대상은 지정할 수 없습니다.', events: [] }
   }
 
   if (getDistance(player.position, target.position) !== 1) {
@@ -381,7 +381,13 @@ function handleWarriorThrow(
       ...newState,
       players: newState.players.map(p =>
         p.id === targetId
-          ? { ...p, health: newHealth, isDead, deathTurnsRemaining: isDead ? 3 : p.deathTurnsRemaining }
+          ? {
+              ...p,
+              health: newHealth,
+              isDead,
+              deathTurnsRemaining: isDead ? 3 : p.deathTurnsRemaining,
+              isStealthed: false,
+            }
           : p
       ),
     }
@@ -472,7 +478,13 @@ function handleWarriorSwordWave(state: GameState, player: Player, position?: Hex
           ...newState,
           players: newState.players.map(p =>
             p.id === target.id
-              ? { ...p, health: newHealth, isDead, deathTurnsRemaining: isDead ? 3 : p.deathTurnsRemaining }
+              ? {
+                  ...p,
+                  health: newHealth,
+                  isDead,
+                  deathTurnsRemaining: isDead ? 3 : p.deathTurnsRemaining,
+                  isStealthed: false,
+                }
               : p
           ),
         }
@@ -577,6 +589,9 @@ function handleRogueBackstab(state: GameState, player: Player, targetId?: string
   if (!target) {
     return { success: false, newState: state, message: '대상을 찾을 수 없습니다.', events: [] }
   }
+  if ('heroClass' in target && !canTargetStealthedPlayer(target)) {
+    return { success: false, newState: state, message: '은신 중인 대상은 지정할 수 없습니다.', events: [] }
+  }
 
   const targetPosition = target.position
 
@@ -622,7 +637,13 @@ function handleRogueBackstab(state: GameState, player: Player, targetId?: string
       ...newState,
       players: newState.players.map(p =>
         p.id === targetId
-          ? { ...p, health: newHealth, isDead, deathTurnsRemaining: isDead ? 3 : p.deathTurnsRemaining }
+          ? {
+              ...p,
+              health: newHealth,
+              isDead,
+              deathTurnsRemaining: isDead ? 3 : p.deathTurnsRemaining,
+              isStealthed: false,
+            }
           : p
       ),
     }
@@ -723,7 +744,13 @@ function handleRogueShuriken(state: GameState, player: Player, position?: HexCoo
           ...newState,
           players: newState.players.map(p =>
             p.id === target.id
-              ? { ...p, health: newHealth, isDead, deathTurnsRemaining: isDead ? 3 : p.deathTurnsRemaining }
+              ? {
+                  ...p,
+                  health: newHealth,
+                  isDead,
+                  deathTurnsRemaining: isDead ? 3 : p.deathTurnsRemaining,
+                  isStealthed: false,
+                }
               : p
           ),
         }
@@ -824,8 +851,16 @@ function handleMageMagicArrow(state: GameState, player: Player, targetId?: strin
     return { success: false, newState: state, message: '대상을 찾을 수 없습니다.', events: [] }
   }
 
+  if (targetPlayer && !canTargetStealthedPlayer(targetPlayer)) {
+    return { success: false, newState: state, message: '은신 중인 대상은 지정할 수 없습니다.', events: [] }
+  }
+
+  const isEnhanced = player.isEnhanced
+  const clone = state.clones.find(c => c.playerId === player.id)
+  const attackOrigin = isEnhanced && clone ? clone.position : player.position
+
   const targetPosition = targetPlayer?.position ?? targetMonster!.position
-  const distance = getDistance(player.position, targetPosition)
+  const distance = getDistance(attackOrigin, targetPosition)
 
   // 용사 대상은 사거리 2, 몬스터는 인접만
   const maxRange = targetPlayer ? 2 : 1
@@ -879,10 +914,19 @@ function handleMageMagicArrow(state: GameState, player: Player, targetId?: strin
     if (isDead) events.push({ type: 'MONSTER_DIED', monsterId: targetId })
   }
 
+  if (isEnhanced) {
+    newState = {
+      ...newState,
+      players: newState.players.map(p =>
+        p.id === player.id ? { ...p, isEnhanced: false } : p
+      ),
+    }
+  }
+
   return {
     success: true,
     newState,
-    message: `마법 화살! ${damage}의 피해를 입혔습니다.`,
+    message: `${isEnhanced && clone ? '강화 마법 화살! 분신이 공격하여 ' : '마법 화살! '}${damage}의 피해를 입혔습니다.`,
     events,
   }
 }
@@ -948,6 +992,7 @@ function handleMageClone(state: GameState, player: Player): SkillResult {
  */
 function handleMageBurst(state: GameState, player: Player): SkillResult {
   const damage = getStatTotal(player.stats.intelligence)
+  const isEnhanced = player.isEnhanced
   const events: GameEvent[] = []
   let newState = applySkillUsage(state, player.id, 'mage-burst')
 
@@ -961,12 +1006,38 @@ function handleMageBurst(state: GameState, player: Player): SkillResult {
       if (coordEquals(target.position, pos)) {
         const newHealth = Math.max(0, target.health - damage)
         const isDead = newHealth <= 0
+        let pushedPosition = target.position
+
+        if (isEnhanced && !isDead) {
+          const pushDir = {
+            q: target.position.q - player.position.q,
+            r: target.position.r - player.position.r,
+          }
+          const candidate = { q: target.position.q + pushDir.q, r: target.position.r + pushDir.r }
+          const tile = getTile(deserializeBoard(newState.board), candidate)
+          if (
+            tile &&
+            isWalkableTileType(tile.type) &&
+            !isOccupiedByAlivePlayer(newState, candidate, target.id) &&
+            !isOccupiedByAliveMonster(newState, candidate)
+          ) {
+            pushedPosition = candidate
+            events.push({ type: 'PLAYER_MOVED', playerId: target.id, from: target.position, to: candidate })
+          }
+        }
 
         newState = {
           ...newState,
           players: newState.players.map(p =>
             p.id === target.id
-              ? { ...p, health: newHealth, isDead, deathTurnsRemaining: isDead ? 3 : p.deathTurnsRemaining }
+              ? {
+                  ...p,
+                  health: newHealth,
+                  isDead,
+                  deathTurnsRemaining: isDead ? 3 : p.deathTurnsRemaining,
+                  isStealthed: false,
+                  position: pushedPosition,
+                }
               : p
           ),
         }
@@ -983,11 +1054,29 @@ function handleMageBurst(state: GameState, player: Player): SkillResult {
         const actualDamage = Math.min(damage, monster.health)
         const newHealth = Math.max(0, monster.health - damage)
         const isDead = newHealth <= 0
+        let pushedPosition = monster.position
+
+        if (isEnhanced && !isDead) {
+          const pushDir = {
+            q: monster.position.q - player.position.q,
+            r: monster.position.r - player.position.r,
+          }
+          const candidate = { q: monster.position.q + pushDir.q, r: monster.position.r + pushDir.r }
+          const tile = getTile(deserializeBoard(newState.board), candidate)
+          if (
+            tile &&
+            isWalkableTileType(tile.type) &&
+            !isOccupiedByAlivePlayer(newState, candidate) &&
+            !isOccupiedByAliveMonster(newState, candidate, monster.id)
+          ) {
+            pushedPosition = candidate
+          }
+        }
 
         newState = {
           ...newState,
           monsters: newState.monsters.map(m =>
-            m.id === monster.id ? { ...m, health: newHealth, isDead } : m
+            m.id === monster.id ? { ...m, health: newHealth, isDead, position: pushedPosition } : m
           ),
           players: newState.players.map(p =>
             p.id === player.id ? { ...p, monsterEssence: p.monsterEssence + actualDamage } : p
@@ -995,15 +1084,27 @@ function handleMageBurst(state: GameState, player: Player): SkillResult {
         }
 
         events.push({ type: 'PLAYER_ATTACKED', attackerId: player.id, targetId: monster.id, damage })
+        if (isEnhanced && !coordEquals(monster.position, pushedPosition)) {
+          events.push({ type: 'PLAYER_MOVED', playerId: monster.id, from: monster.position, to: pushedPosition })
+        }
         if (isDead) events.push({ type: 'MONSTER_DIED', monsterId: monster.id })
       }
+    }
+  }
+
+  if (isEnhanced) {
+    newState = {
+      ...newState,
+      players: newState.players.map(p =>
+        p.id === player.id ? { ...p, isEnhanced: false } : p
+      ),
     }
   }
 
   return {
     success: true,
     newState,
-    message: `마력 방출! 주변 1칸에 ${damage}의 피해를 입혔습니다.`,
+    message: `${isEnhanced ? '강화 마력 방출! 피해 대상이 밀려납니다. ' : ''}주변 1칸에 ${damage}의 피해를 입혔습니다.`,
     events,
   }
 }
@@ -1046,7 +1147,13 @@ function handleMageMeteor(state: GameState, player: Player, position?: HexCoord)
         ...newState,
         players: newState.players.map(p =>
           p.id === target.id
-            ? { ...p, health: newHealth, isDead, deathTurnsRemaining: isDead ? 3 : p.deathTurnsRemaining }
+            ? {
+                ...p,
+                health: newHealth,
+                isDead,
+                deathTurnsRemaining: isDead ? 3 : p.deathTurnsRemaining,
+                isStealthed: false,
+              }
             : p
         ),
       }

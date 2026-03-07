@@ -1,4 +1,4 @@
-import type { Player, Stats } from '@forgod/core'
+import type { Player, Stats } from '@forgod/server/game'
 import { useGameStore } from '../../store/gameStore'
 import RetroButton from '../ui/RetroButton'
 import DiceDisplay from '../ui/DiceDisplay'

@@ -155,7 +155,7 @@ export class GameEngine {
       case 'BASIC_ATTACK':
         return this.handleBasicAttack(state, action.targetId)
       case 'USE_SKILL':
-        return this.handleUseSkill(state, action.skillId, action.targetId, action.position)
+        return this.handleUseSkill(state, action.skillId, action.targetId, action.position, action.reduceCooldownSkillId)
       case 'ROLL_STAT_DICE':
         return this.handleRollStatDice(state, action.stat)
       case 'END_TURN':
@@ -506,6 +506,7 @@ export class GameEngine {
         // 버프/상태 필드
         ironStanceActive: false,
         poisonActive: false,
+        warriorPowerStrikeActive: false,
         isStealthed: false,
         isEnhanced: false,
         isBound: false,
@@ -956,8 +957,14 @@ export class GameEngine {
     let attackerStealthBroken = currentPlayer.isStealthed
 
     // 피해 계산: 힘(주사위 2개 합) + 독 바르기 보너스
-    let damage = this.getStatTotal(currentPlayer.stats.strength)
+    const strengthDamage = this.getStatTotal(currentPlayer.stats.strength)
+    let damage = strengthDamage
     let poisonUsed = false
+    let powerStrikeUsed = false
+    if (currentPlayer.warriorPowerStrikeActive) {
+      damage += strengthDamage
+      powerStrikeUsed = true
+    }
     if (currentPlayer.poisonActive) {
       damage += this.getStatTotal(currentPlayer.stats.dexterity)
       poisonUsed = true
@@ -996,6 +1003,7 @@ export class GameEngine {
                   ...p,
                   hasUsedBasicAttack: true,
                   poisonActive: poisonUsed ? false : p.poisonActive,
+                  warriorPowerStrikeActive: powerStrikeUsed ? false : p.warriorPowerStrikeActive,
                   isStealthed: attackerStealthBroken ? false : p.isStealthed,
                 }
               : p
@@ -1064,6 +1072,7 @@ export class GameEngine {
             const updates: Partial<Player> = {
               hasUsedBasicAttack: true,
               poisonActive: poisonUsed ? false : p.poisonActive,
+              warriorPowerStrikeActive: powerStrikeUsed ? false : p.warriorPowerStrikeActive,
               isStealthed: attackerStealthBroken ? false : p.isStealthed,
             }
             if (attackerCorruption) {
@@ -1144,6 +1153,7 @@ export class GameEngine {
                 monsterEssence: p.monsterEssence + actualDamage,
                 hasUsedBasicAttack: true,
                 poisonActive: poisonUsed ? false : p.poisonActive,
+                warriorPowerStrikeActive: powerStrikeUsed ? false : p.warriorPowerStrikeActive,
                 isStealthed: attackerStealthBroken ? false : p.isStealthed,
               }
             : p
@@ -1196,9 +1206,10 @@ export class GameEngine {
     state: GameState,
     skillId: string,
     targetId?: string,
-    position?: HexCoord
+    position?: HexCoord,
+    reduceCooldownSkillId?: string
   ): ActionResult {
-    const result = useSkill(state, skillId, targetId, position)
+    const result = useSkill(state, skillId, targetId, position, reduceCooldownSkillId)
     return {
       success: result.success,
       newState: result.newState,

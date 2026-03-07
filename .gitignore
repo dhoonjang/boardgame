@@ -33,3 +33,7 @@ yarn-error.log*
 
 # AI game logs
 packages/indian-poker-server/logs/
+
+# e2e artifacts
+playwright-report/
+test-results/

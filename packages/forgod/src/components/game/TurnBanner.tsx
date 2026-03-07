@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import type { GameState } from '@forgod/core'
+import type { GameState } from '@forgod/server/game'
 import Badge from '../ui/Badge'
 import RetroButton from '../ui/RetroButton'
 import { CLASS_LABELS, STATE_LABELS } from '../../styles/theme'

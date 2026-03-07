@@ -2,8 +2,8 @@ import { Hono } from 'hono'
 import { SessionManager } from './session'
 import { CreateGameSchema, GameActionSchema } from './schemas/action'
 import { HeroClassQuerySchema, RevelationSourceQuerySchema } from './schemas/static-data'
-import type { GameAction, Player, Stats, HeroClass } from '@forgod/core'
-import { ALL_SKILLS, SKILLS_BY_CLASS, MONSTERS, REVELATIONS } from '@forgod/core'
+import type { GameAction, Player, Stats, HeroClass } from './game'
+import { ALL_SKILLS, SKILLS_BY_CLASS, MONSTERS, REVELATIONS } from './game'
 
 // 세션 매니저 인스턴스
 export let sessionManager = new SessionManager()

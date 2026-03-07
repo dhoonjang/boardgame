@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import type { ValidAction, HexCoord } from '@forgod/core'
+import type { ValidAction, HexCoord } from '@forgod/server/game'
 import { useGameStore } from '../store/gameStore'
 
 export function useCombatActions(validActions: ValidAction[]) {

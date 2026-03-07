@@ -1,4 +1,4 @@
-import type { Revelation } from '@forgod/core'
+import type { Revelation } from '@forgod/server/game'
 import RetroPanel from '../ui/RetroPanel'
 import Badge from '../ui/Badge'
 import RetroButton from '../ui/RetroButton'

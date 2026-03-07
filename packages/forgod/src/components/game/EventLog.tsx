@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react'
-import type { GameEvent } from '@forgod/core'
+import type { GameEvent } from '@forgod/server/game'
 import type { UIGameEvent } from '../../store/gameStore'
 
 interface EventLogProps {

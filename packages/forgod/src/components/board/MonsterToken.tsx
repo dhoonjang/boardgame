@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import type { Monster } from '@forgod/core'
+import type { Monster } from '@forgod/server/game'
 import { axialToPixel } from '../../utils/hexUtils'
 
 interface MonsterTokenProps {

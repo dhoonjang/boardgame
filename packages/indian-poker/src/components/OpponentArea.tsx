@@ -54,7 +54,7 @@ export default function OpponentArea({ opponent, opponentCard, isAIGame, aiExpre
       {/* 이름 + 칩 + AI 뱃지 */}
       <div className="flex items-center gap-2">
         <span className="text-lg font-semibold">{opponent.name}</span>
-        <span className="text-sm text-slate-300 font-semibold">🪙 {opponent.chips}</span>
+        <span data-testid="opponent-chips" className="text-sm text-slate-300 font-semibold">🪙 {opponent.chips}</span>
         {isAIGame && (
           <span className="text-xs px-2 py-0.5 bg-amber-500/20 text-amber-300 rounded-full">AI</span>
         )}

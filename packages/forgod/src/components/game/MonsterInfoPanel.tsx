@@ -1,5 +1,5 @@
-import type { Monster } from '@forgod/core'
-import { MONSTERS } from '@forgod/core'
+import type { Monster } from '@forgod/server/game'
+import { MONSTERS } from '@forgod/server/game'
 import HealthBar from '../ui/HealthBar'
 
 interface MonsterInfoPanelProps {

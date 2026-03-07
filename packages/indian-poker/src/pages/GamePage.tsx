@@ -28,13 +28,14 @@ export default function GamePage() {
   const {
     playerView, validActions, sendAction, playerId, error, reset,
     isAIGame, aiExpression, aiCharacterId,
-    chatMessages, sendChat, pendingRoundResult, pendingGameOver,
+    chatMessages, sendChat, pendingRoundResult, pendingGameOver, flushDeferredState,
   } = useGameStore()
 
   const [roundResult, setRoundResult] = useState<RoundResult | null>(null)
   const [showHistory, setShowHistory] = useState(false)
   const [showGameOverModal, setShowGameOverModal] = useState(false)
   const prevHistoryLenRef = useRef<number>(-1)
+  const shownRoundResultRef = useRef<number>(0)
   const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const gameOverFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -47,14 +48,20 @@ export default function GamePage() {
 
   // show-game-over 이벤트 기반 모달 표시
   useEffect(() => {
-    if (!pendingGameOver || playerView?.phase !== 'game_over') return
+    if (!pendingGameOver) return
+
+    const appliedView = playerView?.phase === 'game_over'
+      ? playerView
+      : flushDeferredState()
+    if (appliedView?.phase !== 'game_over') return
+
     setShowGameOverModal(true)
     useGameStore.setState({ pendingGameOver: false })
     if (gameOverFallbackRef.current) {
       clearTimeout(gameOverFallbackRef.current)
       gameOverFallbackRef.current = null
     }
-  }, [pendingGameOver, playerView?.phase])
+  }, [pendingGameOver, playerView?.phase, flushDeferredState])
 
   // Fallback: AI 게임에서 10초 내 show-game-over 미도착 시
   useEffect(() => {
@@ -79,7 +86,12 @@ export default function GamePage() {
   // show-round-result 이벤트 기반 모달 표시
   useEffect(() => {
     if (!playerView || !pendingRoundResult || playerView.phase === 'game_over') return
+    if (pendingRoundResult.roundNumber <= shownRoundResultRef.current) {
+      useGameStore.setState({ pendingRoundResult: null })
+      return
+    }
     setRoundResult(pendingRoundResult)
+    shownRoundResultRef.current = pendingRoundResult.roundNumber
     useGameStore.setState({ pendingRoundResult: null })
     if (fallbackTimerRef.current) {
       clearTimeout(fallbackTimerRef.current)
@@ -95,10 +107,24 @@ export default function GamePage() {
       prevHistoryLenRef.current = len
       return
     }
-    if (len > prevHistoryLenRef.current && playerView.phase !== 'game_over') {
+    if (len > prevHistoryLenRef.current && playerView.phase === 'round_end') {
+      const lastRound = playerView.roundHistory[len - 1]
+      if (!lastRound || lastRound.roundNumber <= shownRoundResultRef.current) {
+        prevHistoryLenRef.current = len
+        return
+      }
       fallbackTimerRef.current = setTimeout(() => {
         if (!roundResult) {
-          setRoundResult(playerView.roundHistory[len - 1])
+          const latest = useGameStore.getState().playerView
+          const latestLastRound = latest?.roundHistory[latest.roundHistory.length - 1]
+          if (
+            latestLastRound &&
+            latestLastRound.roundNumber > shownRoundResultRef.current &&
+            latest?.phase === 'round_end'
+          ) {
+            shownRoundResultRef.current = latestLastRound.roundNumber
+            setRoundResult(latestLastRound)
+          }
         }
       }, 10000)
     }
@@ -286,7 +312,9 @@ export default function GamePage() {
           opponentName={playerView.opponent.name}
           onDismiss={() => {
             setRoundResult(null)
-            if (playerView.phase === 'round_end') {
+            const appliedView = flushDeferredState()
+            const phase = appliedView?.phase ?? playerView.phase
+            if (phase === 'round_end') {
               sendAction({ type: 'START_ROUND' })
             }
           }}

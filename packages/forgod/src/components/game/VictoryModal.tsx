@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion'
-import type { Player } from '@forgod/core'
+import type { Player } from '@forgod/server/game'
 import RetroButton from '../ui/RetroButton'
 import Badge from '../ui/Badge'
 import { CLASS_LABELS } from '../../styles/theme'

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { GameState, GameAction, GameEvent, ValidAction, HeroClass, HexCoord } from '@forgod/core'
+import type { GameState, GameAction, GameEvent, ValidAction, HeroClass, HexCoord } from '@forgod/server/game'
 import { createAdapter, type AdapterMode, type GameAdapter } from '../adapters'
 
 export type InteractionMode =

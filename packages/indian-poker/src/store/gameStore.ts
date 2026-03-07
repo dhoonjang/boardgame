@@ -20,6 +20,10 @@ interface GameStore {
   // 게임 데이터
   playerView: PlayerView | null
   validActions: ValidAction[]
+  deferredPlayerView: PlayerView | null
+  deferredValidActions: ValidAction[] | null
+  queuedPlayerView: PlayerView | null
+  queuedValidActions: ValidAction[] | null
   lastEvents: GameEvent[]
 
   // AI 상태
@@ -45,6 +49,7 @@ interface GameStore {
   joinGame(gameId: string, playerName: string): void
   sendAction(action: GameAction): void
   sendChat(message: string): void
+  flushDeferredState(): PlayerView | null
   setError(error: string | null): void
   reset(): void
 }
@@ -60,6 +65,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   playerName: null,
   playerView: null,
   validActions: [],
+  deferredPlayerView: null,
+  deferredValidActions: null,
+  queuedPlayerView: null,
+  queuedValidActions: null,
   lastEvents: [],
   isAIGame: false,
   aiCharacterId: null,
@@ -103,11 +112,58 @@ export const useGameStore = create<GameStore>((set, get) => ({
     })
 
     socket.on('game-state', ({ playerView }) => {
-      set({ playerView })
+      set((state) => {
+        // AI 라운드 종료/게임 종료는 결과 모달 이후에 반영해 연출 순서 고정
+        if (
+          state.isAIGame &&
+          state.playerView?.phase === 'betting' &&
+          (playerView.phase === 'round_end' || playerView.phase === 'game_over')
+        ) {
+          // 칩/라운드 결과는 보류하되, 베팅 진행 정보(팟/현재베팅)는 즉시 반영
+          const liveBettingView: PlayerView = {
+            ...state.playerView,
+            pot: playerView.pot,
+            currentPlayerIndex: playerView.currentPlayerIndex,
+            firstPlayerIndex: playerView.firstPlayerIndex,
+            me: {
+              ...state.playerView.me,
+              currentBet: playerView.me.currentBet,
+            },
+            opponent: {
+              ...state.playerView.opponent,
+              currentBet: playerView.opponent.currentBet,
+            },
+          }
+
+          return {
+            playerView: liveBettingView,
+            validActions: [],
+            deferredPlayerView: playerView,
+            deferredValidActions: null,
+            queuedPlayerView: null,
+            queuedValidActions: null,
+          }
+        }
+
+        // defer 중에 들어온 후속 상태는 큐에 저장했다가 모달 확인 후 반영
+        if (state.deferredPlayerView) {
+          return { queuedPlayerView: playerView }
+        }
+
+        return { playerView }
+      })
     })
 
     socket.on('valid-actions', ({ actions }) => {
-      set({ validActions: actions })
+      set((state) => {
+        if (state.deferredPlayerView) {
+          if (state.queuedPlayerView) {
+            return { queuedValidActions: actions }
+          }
+          return { deferredValidActions: actions }
+        }
+        return { validActions: actions }
+      })
     })
 
     socket.on('action-result', ({ success, message, events }) => {
@@ -214,6 +270,37 @@ export const useGameStore = create<GameStore>((set, get) => ({
     socket.emit('player-chat', { message })
   },
 
+  flushDeferredState() {
+    const state = get()
+    if (!state.deferredPlayerView) return null
+
+    const applied = state.deferredPlayerView
+    const nextValidActions = state.deferredValidActions ?? state.validActions
+
+    if (state.queuedPlayerView) {
+      set({
+        playerView: state.queuedPlayerView,
+        validActions: state.queuedValidActions ?? nextValidActions,
+        deferredPlayerView: null,
+        deferredValidActions: null,
+        queuedPlayerView: null,
+        queuedValidActions: null,
+      })
+      return state.queuedPlayerView
+    }
+
+    set({
+      playerView: applied,
+      validActions: nextValidActions,
+      deferredPlayerView: null,
+      deferredValidActions: null,
+      queuedPlayerView: null,
+      queuedValidActions: null,
+    })
+
+    return applied
+  },
+
   setError(error: string | null) {
     set({ error })
   },
@@ -227,6 +314,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       playerName: null,
       playerView: null,
       validActions: [],
+      deferredPlayerView: null,
+      deferredValidActions: null,
+      queuedPlayerView: null,
+      queuedValidActions: null,
       lastEvents: [],
       isAIGame: false,
       aiCharacterId: null,

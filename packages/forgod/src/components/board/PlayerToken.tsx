@@ -1,6 +1,6 @@
 import { memo } from 'react'
 import { motion } from 'framer-motion'
-import type { Player } from '@forgod/core'
+import type { Player } from '@forgod/server/game'
 import { axialToPixel, CLASS_COLORS, STATE_COLORS, getTokenOffset } from '../../utils/hexUtils'
 
 interface PlayerTokenProps {

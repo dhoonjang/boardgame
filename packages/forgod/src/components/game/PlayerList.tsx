@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import type { Player } from '@forgod/core'
+import type { Player } from '@forgod/server/game'
 import HealthBar from '../ui/HealthBar'
 import Badge from '../ui/Badge'
 import { CLASS_LABELS, STATE_LABELS } from '../../styles/theme'

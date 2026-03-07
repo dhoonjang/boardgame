@@ -1,5 +1,5 @@
-import { GameEngine } from '@forgod/core'
-import type { GameState, GameAction } from '@forgod/core'
+import { GameEngine } from '@forgod/server/game'
+import type { GameState, GameAction } from '@forgod/server/game'
 import type { GameAdapter, CreateGameParams, ActionResult } from './types'
 
 const engine = new GameEngine()
