@@ -106,12 +106,14 @@ pnpm indian-poker:build          # 전체 빌드 (server → indian-poker 순서
 
 # 테스트
 pnpm indian-poker:test           # indian-poker-server 테스트 (게임 로직 + 서버)
+pnpm indian-poker:e2e            # indian-poker UI E2E 테스트 (Playwright)
 
 # 서버
 pnpm indian-poker:server         # indian-poker 서버 시작 (포트 3002)
 
 # 개별 패키지
 pnpm --filter indian-poker dev
+pnpm --filter indian-poker test:e2e
 pnpm --filter @indian-poker/server build
 pnpm --filter @indian-poker/server test
 pnpm --filter @indian-poker/server start

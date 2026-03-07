@@ -16,6 +16,7 @@
     "indian-poker:dev": "pnpm --filter indian-poker dev",
     "indian-poker:build": "pnpm --filter @indian-poker/server build && pnpm --filter indian-poker build",
     "indian-poker:test": "pnpm --filter @indian-poker/server test",
+    "indian-poker:e2e": "pnpm --filter indian-poker test:e2e",
     "indian-poker:server": "pnpm --filter @indian-poker/server start",
     "indian-poker:server:dev": "pnpm --filter @indian-poker/server dev",
     "indian-poker:server:test": "pnpm --filter @indian-poker/server test",
