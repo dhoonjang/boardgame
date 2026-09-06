@@ -10,7 +10,8 @@
 
 | 프로젝트 | 이름 | status | 인원 | 버전 | 열린 Q | TBD | 갱신 |
 |---|---|---|---|---|---|---|---|
-| [forgod](projects/forgod/) | For God | draft | 3-6 | 0.1.0 | 31 | 45 | 2026-09-06 |
+| [forgod](projects/forgod/) | For God | draft | 3-6 | 0.1.0 | 31 | 44 | 2026-09-06 |
+| [pass-and-shoot](projects/pass-and-shoot/) | 패스 앤 슛 | idea | 2 | 0.1.0 | 18 | 0 | 2026-09-06 |
 
 ## 라이프사이클
 
