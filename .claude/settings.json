@@ -1,35 +1,41 @@
 {
   "hooks": {
-    "PreToolUse": [
+    "SessionStart": [
       {
-        "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/check-claude-md.sh",
-            "timeout": 5000
+            "command": "bash .claude/hooks/session-start.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/check-project-context.sh",
+            "timeout": 10
           }
         ]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "Edit|Write",
+        "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/post-edit-rebuild.sh",
-            "timeout": 5000
-          }
-        ]
-      },
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
+            "command": "bash .claude/hooks/lint-rules-hook.sh",
+            "timeout": 15
+          },
           {
             "type": "command",
-            "command": "bash .claude/hooks/type-sync-warning.sh",
-            "timeout": 5000
+            "command": "bash .claude/hooks/build-index-hook.sh",
+            "timeout": 10
           }
         ]
       }
