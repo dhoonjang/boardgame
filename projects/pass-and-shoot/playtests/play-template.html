@@ -1,0 +1,278 @@
+<title>패스 앤 슛</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Do+Hyeon&family=Oswald:wght@500;600&family=Noto+Sans+KR:wght@400;700&display=swap">
+<style>
+:root{--board:#1f2a24;--panel:#2a3a30;--chalk:#e9e4d4;--paper:#f3efe4;--ink:#1d2420;--slate:#262b31;--slate-ink:#ece6d6;--muted:#a9a397;--ribbon:#f7e6a6;--ribbon-ink:#4a3c05;--accent:#e9b62f;--line:rgba(233,228,212,.2)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--board);color:var(--chalk);font-family:"Noto Sans KR",-apple-system,"Apple SD Gothic Neo",sans-serif;font-size:14px;line-height:1.45}
+.wrap{max-width:1100px;margin:0 auto;padding:14px 14px 60px}
+h1{font-family:"Do Hyeon","Noto Sans KR",sans-serif;font-weight:400;font-size:28px;margin:0;letter-spacing:.01em}
+h2{font-family:"Do Hyeon","Noto Sans KR",sans-serif;font-weight:400;font-size:22px;margin:14px 0 8px}
+h3{font-family:Oswald,"Noto Sans KR",sans-serif;font-weight:600;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:14px 0 6px}
+.sub{font-family:Oswald,sans-serif;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding-bottom:10px;border-bottom:1px solid var(--line);margin-bottom:12px}
+.topbar .right{display:flex;gap:8px;flex-wrap:wrap}
+button{font:inherit;font-size:14px;padding:8px 14px;border-radius:6px;border:1px solid rgba(233,228,212,.35);background:rgba(233,228,212,.08);color:var(--chalk);cursor:pointer}
+button:hover{background:rgba(233,228,212,.18)}button:focus-visible{outline:2px solid var(--accent)}
+button.primary{background:var(--accent);color:var(--ribbon-ink);border-color:transparent;font-weight:700}
+button.primary:hover{background:#f2c74a}button:disabled{opacity:.4;cursor:not-allowed}
+button.small{font-size:12px;padding:4px 9px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:12px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:10px}
+.card{position:relative;border-radius:8px;padding:9px 10px 8px;display:flex;flex-direction:column;gap:5px;min-height:150px;box-shadow:0 2px 0 rgba(0,0,0,.25),0 6px 14px rgba(0,0,0,.28);cursor:default;border:2px solid transparent}
+.card.att{background:var(--paper);color:var(--ink)}.card.def{background:var(--slate);color:var(--slate-ink)}
+.card.pick{cursor:pointer}.card.pick:hover{border-color:var(--accent)}.card.sel{border-color:var(--accent);box-shadow:0 0 0 3px rgba(233,182,47,.35)}
+.card.dim{opacity:.45}.card.small{min-height:0;padding:6px 8px}
+.card .head{display:flex;justify-content:space-between;font-family:Oswald,sans-serif;font-size:10px;letter-spacing:.1em;text-transform:uppercase;opacity:.7}
+.card .name{font-family:"Do Hyeon","Noto Sans KR",sans-serif;font-size:19px;line-height:1.1}
+.card .en{font-family:Oswald,sans-serif;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;opacity:.65;margin-top:-3px}
+.card .icons{display:flex;flex-direction:column;gap:4px;margin-top:2px}
+.card .irow{display:flex;align-items:center;gap:6px;font-size:11px}.card .irow svg{flex:none}
+.card .lbl{font-family:Oswald,sans-serif;font-weight:600;font-size:9.5px;letter-spacing:.08em;min-width:24px}
+.card .fx{font-size:10.5px;background:var(--ribbon);color:var(--ribbon-ink);border-radius:4px;padding:3px 6px;font-weight:700}
+.card .desc{font-size:10.5px;opacity:.8;margin-top:auto}
+.card .tag{position:absolute;top:-8px;right:8px;background:var(--accent);color:var(--ribbon-ink);font-family:Oswald,sans-serif;font-size:10px;letter-spacing:.08em;padding:1px 7px;border-radius:10px;font-weight:600}
+.card.back{background:repeating-linear-gradient(45deg,#3b4a41 0 6px,#334139 6px 12px);color:var(--chalk);align-items:center;justify-content:center;min-height:90px}
+.status{display:flex;gap:18px;flex-wrap:wrap;align-items:center;font-variant-numeric:tabular-nums}
+.status b{font-family:Oswald,sans-serif;font-size:22px}
+.pos{display:grid;grid-template-columns:auto repeat(5,1fr) auto;gap:4px;align-items:center;margin:6px 0}
+.pos .cell{height:38px;border:1px solid var(--line);border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:Oswald,sans-serif;font-size:12px;letter-spacing:.06em;position:relative;color:var(--muted)}
+.pos .cell.ball{background:rgba(233,182,47,.2);border-color:var(--accent);color:var(--chalk)}
+.pos .goal{font-family:Oswald,sans-serif;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:0 6px;text-align:center}
+.track{display:grid;grid-template-columns:repeat(20,1fr);gap:2px;margin-top:6px}
+.tc{height:30px;display:flex;align-items:center;justify-content:center;font-family:Oswald,sans-serif;font-weight:600;font-size:12px;color:#1d2420;border-radius:3px}
+.tc.hit{outline:3px solid #fff;outline-offset:-3px}
+.marks{position:relative;height:30px}.mk{position:absolute;transform:translateX(-50%);font-family:Oswald,sans-serif;font-size:13px;text-align:center;line-height:1}.mk small{display:block;font-size:9px;opacity:.7}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;margin-top:4px}.legend i,.otab i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+table.otab{border-collapse:collapse;font-size:12.5px;margin-top:6px}table.otab td{padding:2px 14px 2px 0}
+.why{font-size:12.5px;display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin-top:6px}
+.overlay{position:fixed;inset:0;background:#141c17;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;z-index:10;text-align:center;padding:20px}
+.overlay h2{font-size:30px}.overlay p{color:var(--muted);max-width:40ch}
+.log{font-size:12px;color:var(--muted);max-height:180px;overflow:auto;border-top:1px solid var(--line);padding-top:6px}
+.pool{display:flex;gap:8px;flex-wrap:wrap}
+.note{font-size:12.5px;color:var(--muted)}
+.warn{color:#f0b36b;font-size:12.5px}
+.dice{font-family:Oswald,sans-serif;font-size:44px;font-weight:600;line-height:1;color:var(--accent)}
+.result{font-family:"Do Hyeon","Noto Sans KR",sans-serif;font-size:24px}
+details{margin:10px 0}summary{cursor:pointer;color:var(--muted)}
+input[type=text]{font:inherit;padding:6px 8px;border-radius:6px;border:1px solid rgba(233,228,212,.35);background:rgba(0,0,0,.25);color:var(--chalk);width:160px}
+.hidden{display:none}
+.card.mini{min-height:0;padding:6px 8px 6px;gap:3px;font-size:10px;border-radius:6px}
+.card.mini .name{font-size:13.5px}.card.mini .en{display:none}.card.mini .desc{display:none}.card.mini .head{font-size:8.5px}.card.mini .irow{gap:4px;font-size:9.5px}.card.mini .lbl{min-width:20px;font-size:8.5px}.card.mini .fx{font-size:9px;padding:2px 5px}
+.card.slot{min-height:190px}
+.board{background:#17211b;border:1px solid var(--line);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.zone{border:1px dashed rgba(233,228,212,.18);border-radius:10px;padding:8px 10px}
+.zone .zh{display:flex;justify-content:space-between;align-items:center;font-family:Oswald,sans-serif;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.zone .zh b{font-family:"Do Hyeon","Noto Sans KR",sans-serif;font-size:16px;letter-spacing:0;text-transform:none;color:var(--chalk)}
+.zrow{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.zgroup{display:flex;flex-direction:column;gap:4px}.zgroup .gl{font-family:Oswald,sans-serif;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.minis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.minis.h3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.mini-wrap{display:flex;flex-direction:column;gap:3px}
+.center{display:grid;grid-template-columns:minmax(200px,240px) 1fr minmax(200px,240px);gap:10px;align-items:stretch}
+.slotcol{display:flex;flex-direction:column;gap:8px;justify-content:center}
+.slotcol .sl{font-family:Oswald,sans-serif;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);text-align:center}
+.slotbox{border:2px dashed rgba(233,228,212,.25);border-radius:8px;min-height:120px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;text-align:center;padding:8px}
+.slotbox.filled{border-style:solid;padding:0;border:none;min-height:0}
+.pitchwrap{display:flex;flex-direction:column;gap:6px}
+.scorebar{display:flex;justify-content:center;align-items:center;gap:18px;font-family:Oswald,sans-serif;font-size:14px;letter-spacing:.06em}
+.scorebar b{font-size:26px}.scorebar .rd{color:var(--muted);font-size:12px;letter-spacing:.14em;text-transform:uppercase}
+.pitch{width:100%;height:auto;display:block;border-radius:8px}
+.zonelabels{display:grid;grid-template-columns:repeat(5,1fr);font-family:Oswald,sans-serif;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);text-align:center}
+.actions{display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;min-height:44px}
+.bigres{font-family:"Do Hyeon","Noto Sans KR",sans-serif;font-size:22px}
+.trackbox{background:rgba(0,0,0,.18);border-radius:8px;padding:8px 10px}
+.trackbox .tc{height:26px;font-size:11px}
+@media (max-width:900px){.center{grid-template-columns:1fr}.slotcol{flex-direction:row}.slotcol>div{flex:1}.zrow{grid-template-columns:1fr}}
+@media (max-width:600px){.grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}.card .name{font-size:16px}.minis{grid-template-columns:repeat(2,1fr)}}
+</style>
+<div class="wrap" id="app"></div>
+<script>
+__ENGINE__
+const DATA = __DATA__;
+// ===== 기본 =====
+const TR=DATA.TR, AT=DATA.AT, DT=DATA.DT, TEN_EN=DATA.TEN_EN, BLK_KO=DATA.BLK_KO, BLK_EN=DATA.BLK_EN;
+const MINSTR=DATA.params.MINSTR, BASE=DATA.params.BASE, VS=DATA.params.VSCALE;
+const BOUND=[0,3,1,2], PAIRS=[[0,1],[1,2],[2,3],[3,0]], MK=['①','②','③','④'];
+const BANDS=['카운터','소유 상실','교착','전진','돌파'], BC=['#c9402f','#e0803a','#8a8578','#3aa35b','#e9b62f'];
+const COL={0:'#e4572e',1:'#3aa35b',2:'#e9b62f',3:'#3b7dd8'};
+const tIdxA={},tIdxD={};AT.forEach((p,t)=>p.forEach((n,k)=>tIdxA[n]=[t,k]));DT.forEach((p,t)=>p.forEach((n,k)=>tIdxD[n]=[t,k]));
+const CARD={};DATA.cards.forEach(c=>CARD[c.id]=c);
+const POSNAME={'-2':'자기 PA','-1':'자기 진영','0':'중원','1':'상대 진영','2':'상대 PA'};
+const rnd=n=>Math.floor(Math.random()*n);
+function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=rnd(i+1);[a[i],a[j]]=[a[j],a[i]];}return a;}
+// ===== 아이콘 =====
+function AH(p,d,c,s=3.6){const n=[-d[1],d[0]];const b=[p[0]-d[0]*s,p[1]-d[1]*s];const h=s*0.62;return '<polygon points="'+p[0]+','+p[1]+' '+(b[0]+n[0]*h)+','+(b[1]+n[1]*h)+' '+(b[0]-n[0]*h)+','+(b[1]-n[1]*h)+'" fill="'+c+'"/>';}
+function S(d,c,w){return '<path d="'+d+'" fill="none" stroke="'+c+'" stroke-width="'+w+'" stroke-linecap="round" stroke-linejoin="round"/>';}
+function D(x,y,r,c){return '<circle cx="'+x+'" cy="'+y+'" r="'+r+'" fill="'+c+'"/>';}
+const GL={
+ '점유':(c,w)=>D(12,12,2.5,c)+S('M16 5.07A8 8 0 1 1 4.48 9.26',c,w)+AH([4.48,9.26],[0.342,-0.94],c),
+ '전환':(c,w)=>S('M6 12.5L12 6.5L18 12.5',c,w+0.2)+S('M6 19.5L12 13.5L18 19.5',c,w+0.2),
+ '측면':(c,w)=>S('M12 7.5V16.5',c,w+0.6)+S('M9.5 12H6',c,w+0.4)+AH([2.4,12],[-1,0],c,4.2)+S('M14.5 12H18',c,w+0.4)+AH([21.6,12],[1,0],c,4.2),
+ '중앙':(c,w)=>S('M12 7.5V16.5',c,w+0.6)+S('M2.4 12H5',c,w+0.4)+AH([9.6,12],[1,0],c,4.2)+S('M21.6 12H19',c,w+0.4)+AH([14.4,12],[-1,0],c,4.2),
+ '뒷공간':(c,w)=>S('M13 12V20.5',c,w+0.2)+S('M4 18Q12 -1 19.5 13',c,w)+AH([19.9,13.9],[0.47,0.88],c),
+ '발밑':(c,w)=>S('M6 20.5H18',c,w+0.2)+D(12,16.8,2.1,c)+S('M12 3V9.5',c,w)+AH([12,13.2],[0,1],c),
+ '패턴':(c,w)=>S('M12 5.5L5 18.5H19Z',c,w-0.2)+D(12,5.5,2.4,c)+D(5,18.5,2.4,c)+D(19,18.5,2.4,c),
+ '개인':(c,w)=>D(6.5,17.5,2.6,c)+S('M8.8 15.3C10.3 10 14 19.5 16.7 8.6',c,w)+AH([17.5,5.6],[0.25,-0.97],c)};
+const SHIELD='M12 1.8L21 5.2V12.2C21 16.9 17.2 20.4 12 22.2C6.8 20.4 3 16.9 3 12.2V5.2Z';
+function icon(t,k,isDef,bg){const c=COL[t];const name=AT[t][k];return isDef?'<path d="'+SHIELD+'" fill="'+c+'"/><g transform="translate(12 11.6) scale(0.68) translate(-12 -12)">'+GL[name](bg,3.4)+'</g>':GL[name](c,2.2);}
+function strip(t,k,n,isDef,bg,sz){let g='';for(let i=0;i<n;i++)g+='<g transform="translate('+(i*26)+' 0)">'+icon(t,k,isDef,bg)+'</g>';return '<svg viewBox="0 0 '+(n*26-2)+' 24" width="'+((n*26-2)*sz/24)+'" height="'+sz+'">'+g+'</svg>';}
+function cardHTML(c,opts={}){if(!c)return '<div class="card '+(opts.side==='A'?'att':'def')+' small"><div class="name">빈 플레이</div><div class="desc">아이콘 없음. 상대 방패마다 −d.</div></div>';
+ const isA=c.side==='A';const tIdx=isA?tIdxA:tIdxD;const bg=isA?'#f3efe4':'#262b31';const byT={};
+ for(const [n,v] of Object.entries(c.icons)){const [t,k]=tIdx[n];(byT[t]=byT[t]||[]).push({n,k,v});}
+ let rows='';for(const t of Object.keys(byT).sort()){for(const {n,k,v} of byT[t]){const label=opts.mini?(isA?n:BLK_KO[n]):(isA?n+' · '+TEN_EN[n]:BLK_KO[n]+' · vs '+AT[+t][k]);rows+='<div class="irow">'+strip(+t,k,v,!isA,bg,opts.mini?15:22)+'<span class="lbl" style="color:'+COL[+t]+'">'+TR[+t]+'</span><span>'+label+'</span></div>';}}
+ const fx=[];const tx=c.effect||ENGINE.effectText(c.id);if(tx)fx.push(tx);
+ const cls='card '+(isA?'att':'def')+(opts.pick?' pick':'')+(opts.sel?' sel':'')+(opts.dim?' dim':'')+(opts.small?' small':'')+(opts.mini?' mini':'')+(opts.slot?' slot':'');
+ return '<div class="'+cls+'" data-id="'+c.id+'">'+(opts.tag?'<span class="tag">'+opts.tag+'</span>':'')+'<div class="head"><span>'+c.id+'</span><span>'+(c.type==='S'?'시스템':'플레이')+'</span></div><div class="name">'+c.name+'</div><div class="en">'+c.en+'</div><div class="icons">'+rows+'</div>'+(fx.length?'<div class="fx">'+fx.join(' · ')+'</div>':'')+((opts.small||opts.mini)?'':'<div class="desc">'+c.desc+'</div>')+'</div>';}
+// ===== 판정 엔진: engine-v5.js (ENGINE) =====
+const band=ENGINE.band;
+// ===== 게임 상태 =====
+let G=null;
+const KEY='pns-v5-game';
+function save(){try{localStorage.setItem(KEY,JSON.stringify(G));}catch(e){}}
+function load(){try{const s=localStorage.getItem(KEY);if(!s)return null;const g=JSON.parse(s);if(!g||!g.deckA||!['choose','reveal','end'].includes(g.phase)){localStorage.removeItem(KEY);return null;}return g;}catch(e){return null;}}
+function newGame(names,rounds){const attS=DATA.cards.filter(c=>c.side==='A'&&c.type==='S').map(c=>c.id),defS=DATA.cards.filter(c=>c.side==='D'&&c.type==='S').map(c=>c.id);
+ const attP=DATA.cards.filter(c=>c.side==='A'&&c.type==='P').map(c=>c.id),defP=DATA.cards.filter(c=>c.side==='D'&&c.type==='P').map(c=>c.id);
+ const sa=shuffle(attS),sd=shuffle(defS);const first=rnd(2);
+ G={phase:'choose',names,rounds,first,players:[0,1].map(i=>({attSys:sa.slice(i*4,i*4+4),defSys:sd.slice(i*4,i*4+4),handA:[],handD:[],redrawLeft:2,redrewThisRound:false,standA:null,standD:null})),
+  deckA:shuffle(attP),deckD:shuffle(defP),discardA:[],discardD:[],score:[0,0],half:1,round:1,att:first,pos:0,pending:{},log:[],handoff:null,roll:null};
+ for(let i=0;i<2;i++)for(let k=0;k<3;k++){drawCard(i,'A');drawCard(i,'D');}
+ G.handoff=null;logLine('전반 킥오프: '+G.names[G.att]+' 공격, 위치 0');save();}
+function drawCard(i,side){const deck=side==='A'?'deckA':'deckD',disc=side==='A'?'discardA':'discardD',hand=side==='A'?'handA':'handD';
+ if(!G[deck].length){if(!G[disc].length)return null;G[deck]=shuffle(G[disc]);G[disc]=[];logLine((side==='A'?'공격':'수비')+' 플레이 덱을 다시 섞음');}
+ const id=G[deck].shift();P(i)[hand].push(id);return id;}
+function redraw(i,id){const p=P(i);if(p.redrawLeft<=0||p.redrewThisRound)return;const c=CARD[id];const side=c.side;const hand=side==='A'?'handA':'handD',disc=side==='A'?'discardA':'discardD';
+ if(!p[hand].includes(id))return;p[hand]=p[hand].filter(x=>x!==id);G[disc].push(id);drawCard(i,side);p.redrawLeft--;p.redrewThisRound=true;logLine(G.names[i]+' 교체 뽑기: '+c.name+' 버림');save();render();}
+function P(i){return G.players[i];}
+function logLine(s){G.log.push('['+G.half+'H R'+G.round+'] '+s);}
+// ===== 라운드 =====
+function submitRound(defSys,attSys,attPlay,defPlay){sel={};const a=P(G.att),d=P(1-G.att);G.pending={};
+ G.pending.swapD=!!(d.standD&&d.standD!==defSys);d.standD=defSys;G.pending.swapA=!!(a.standA&&a.standA!==attSys);a.standA=attSys;
+ G.pending.attPlay=attPlay;G.pending.defPlay=defPlay;G.phase='reveal';G.roll=null;save();render();}
+function currentJudge(){const a=P(G.att),d=P(1-G.att);const A=[CARD[a.standA],G.pending.attPlay?CARD[G.pending.attPlay]:null],Dd=[CARD[d.standD],G.pending.defPlay?CARD[G.pending.defPlay]:null];
+ const R=ENGINE.evalRound(A,Dd,{swapA:!!G.pending.swapA,swapD:!!G.pending.swapD});return {A,Dd,R};}
+function rollDice(){if(G.roll)return;G.roll=1+rnd(20);save();render();}
+function applyRound(){const {A,Dd,R}=currentJudge();const r=G.roll;const b0=band(r,R.B);const o=R.outcome(b0,G.pos);const mb={b:b0,notes:[]};
+ const att=G.att,def=1-att,pa=P(att),pd=P(def);
+ // 카드 정리: 낸 플레이는 버린 더미로, 같은 종류를 1장 뽑는다
+ if(G.pending.defPlay){pd.handD=pd.handD.filter(x=>x!==G.pending.defPlay);G.discardD.push(G.pending.defPlay);}
+ if(G.pending.attPlay){pa.handA=pa.handA.filter(x=>x!==G.pending.attPlay);G.discardA.push(G.pending.attPlay);}
+ drawCard(def,'D');drawCard(att,'A');
+ let text='';const bn=BANDS[b0];
+ if(o.kind==='goal'){G.score[att]++;text=bn+' → 골! '+G.names[att]+' 득점';G.att=def;G.pos=0;pa.standA=null;pa.standD=null;pd.standA=null;pd.standD=null;}
+ else if(o.kind==='concede'){G.score[def]++;text=bn+' → 역습으로 실점! '+G.names[def]+' 득점';G.att=att;G.pos=0;pa.standA=null;pa.standD=null;pd.standA=null;pd.standD=null;}
+ else if(o.kind==='saved'){G.pos=2;text=bn+' → 골이지만 선방. 위치 2 교착';}
+ else if(o.kind==='swap'){G.att=def;G.pos=o.np;text=bn+' → 공격권 교대. '+G.names[def]+' 이(가) 위치 '+o.np+' 에서 공격';}
+ else{G.pos=o.np;text=bn+' → 위치 '+o.np;}
+ logLine(G.names[att]+' 공격 ('+A.map(c=>c?c.name:'빈 플레이').join('+')+') vs '+G.names[def]+' ('+Dd.map(c=>c?c.name:'빈 플레이').join('+')+'): d20='+r+' '+text+(o.notes.length?' ['+o.notes.join(', ')+']':''));
+ G.lastResult={text,r,b:b0,notes:o.notes};
+ G.players.forEach(p=>p.redrewThisRound=false);G.pending={};G.roll=null;
+ G.round++;if(G.round>G.rounds){if(G.half===1)startHalftime();else{G.phase='end';}}else{G.phase='choose';}
+ save();render();}
+function startHalftime(){G.half=2;G.round=1;G.att=1-G.first;G.pos=0;
+ const attP=DATA.cards.filter(c=>c.side==='A'&&c.type==='P').map(c=>c.id),defP=DATA.cards.filter(c=>c.side==='D'&&c.type==='P').map(c=>c.id);
+ G.deckA=shuffle(attP);G.deckD=shuffle(defP);G.discardA=[];G.discardD=[];
+ G.players.forEach(p=>{p.handA=[];p.handD=[];p.redrawLeft=2;p.redrewThisRound=false;p.standA=null;p.standD=null;});
+ for(let i=0;i<2;i++)for(let k=0;k<3;k++){drawCard(i,'A');drawCard(i,'D');}
+ logLine('하프타임. 플레이 덱을 다시 섞고 3장씩 뽑음. 후반 킥오프: '+G.names[G.att]);G.phase='choose';}
+// ===== 렌더 =====
+const app=document.getElementById('app');
+function h(s){return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function topbar(extra){return '<div class="topbar"><div><h1>패스 앤 슛</h1><div class="sub">Pass &amp; Shoot · v5 hotseat</div></div><div class="right">'+(extra||'')+'<button class="small" onclick="toggleRules()">규칙 요약</button><button class="small" onclick="toggleCards()">카드 40장</button><button class="small" onclick="resetGame()">새 게임</button></div></div><div id="rules" class="panel hidden">'+RULES+'</div><div id="cards" class="panel hidden"><h3>공격 시스템</h3><div class="grid">'+DATA.cards.filter(c=>c.side==='A'&&c.type==='S').map(c=>cardHTML(c)).join('')+'</div><h3>공격 플레이</h3><div class="grid">'+DATA.cards.filter(c=>c.side==='A'&&c.type==='P').map(c=>cardHTML(c)).join('')+'</div><h3>수비 시스템</h3><div class="grid">'+DATA.cards.filter(c=>c.side==='D'&&c.type==='S').map(c=>cardHTML(c)).join('')+'</div><h3>수비 플레이</h3><div class="grid">'+DATA.cards.filter(c=>c.side==='D'&&c.type==='P').map(c=>cardHTML(c)).join('')+'</div></div>';}
+const RULES='<h2>규칙 요약</h2><ol style="font-size:13px;line-height:1.6;padding-left:20px"><li><b>배분</b>: 시스템은 뒷면으로 4장씩(공격·수비). 플레이는 공격 12장·수비 12장을 각각 공용 덱으로 섞고 3장씩 뽑아 손에 든다.</li><li><b>손패</b>: 낸 플레이는 버린 더미로 가고, 판정 뒤 공격자는 공격 플레이 1장, 수비자는 수비 플레이 1장을 뽑는다(손패 3장 유지). 덱이 떨어지면 버린 더미를 섞어 쓴다. 라운드 사이에 손패 1장을 버리고 1장 뽑는 교체 뽑기는 하프당 2회.</li><li><b>라운드</b>: 수비자 시스템 유지/교체(공개) → 공격자 시스템(공개) → 두 시스템을 본 뒤 각자 플레이 1장을 뒷면으로 내고 동시에 공개 → 판정. 이 앱은 혼자 시뮬레이션하는 용도라 한 화면에서 넷을 다 고른다. 시스템을 바꾼 라운드에는 자기 마커가 1칸 불리(공격 ① +1 / 수비 ④ −1).</li><li><b>판정</b>: 특성(색)마다 아이콘을 더하고 반대 성향은 1:1 로 지운다(2 미만이면 없음). 상대 방패가 내 성향을 노리거나 내가 없으면 −d, 아니면 +a. 마커 ① 템포+공간 · ② 템포+조직 · ③ 조직+폭 · ④ 폭+공간, 1점 = 1칸, 많이 움직이는 마커부터, 겹치지 않는다(1~19). d20: ① 이하 카운터 / ② 소유 상실 / ③ 교착 / ④ 전진 / 그 위 돌파.</li><li><b>카드 효과</b>: 카드마다 고유한 효과가 한 줄 있다. 단계 순서로 적용한다: 아이콘 → 맞대기 → 마커 → 결과 바꾸기 → 이동량 → 도착. 같은 단계에서는 수비(시스템→플레이) 먼저, 공격(시스템→플레이) 나중. 시스템의 효과는 서 있는 동안 계속 산다.</li><li><b>공 위치</b> −2~2: 카운터는 교대·상대 기준 +1(내가 −2 면 실점), 소유 상실은 교대, 교착은 그대로, 전진 +1, 돌파 +2. 2 를 넘으면 골, 실점 팀이 0 에서 킥오프(시스템 다시 세움).</li><li><b>경기</b>: 전·후반 9 라운드. 하프타임에 플레이 덱을 다시 섞고 3장씩 새로 뽑는다. 후반 킥오프는 반대 팀.</li></ol>';
+function toggleRules(){document.getElementById('rules').classList.toggle('hidden');}function toggleCards(){document.getElementById('cards').classList.toggle('hidden');}
+function resetGame(){if(!confirm('새 게임을 시작할까요? 진행 중인 경기는 사라집니다.'))return;G=null;try{localStorage.removeItem(KEY);}catch(e){}render();}
+function posTrack(viewer){ // viewer 기준 부호. 공격자 기준 pos 를 viewer 기준으로
+ const p=viewer===G.att?G.pos:-G.pos;let cells='';for(let k=-2;k<=2;k++)cells+='<div class="cell'+(k===p?' ball':'')+'">'+(k===p?'⚽ ':'')+k+' '+POSNAME[String(k)]+'</div>';
+ return '<div class="pos"><div class="goal">내 골문</div>'+cells+'<div class="goal">상대 골문</div></div>';}
+function statusBar(viewer){const a=G.att;return '<div class="panel"><div class="status"><span>'+(G.half===1?'전반':'후반')+' <b>'+G.round+'</b>/'+G.rounds+' 라운드</span><span>'+h(G.names[0])+' <b>'+G.score[0]+'</b> : <b>'+G.score[1]+'</b> '+h(G.names[1])+'</span><span>공격: <b style="font-size:16px">'+h(G.names[a])+'</b> · 수비: <b style="font-size:16px">'+h(G.names[1-a])+'</b></span></div>'+posTrack(G.att)+'<div class="note">공 위치는 공격자 기준(오른쪽이 상대 골문).</div></div>';}
+function deckPanel(side){const deck=side==='A'?G.deckA:G.deckD,disc=side==='A'?G.discardA:G.discardD;return '<div class="panel"><h3>'+(side==='A'?'공격':'수비')+' 플레이 덱: 남은 '+deck.length+'장 · 버린 더미 '+disc.length+'장</h3>'+(disc.length?'<div class="grid">'+disc.map(id=>cardHTML(CARD[id],{small:true,dim:true})).join('')+'</div>':'<div class="note">버린 더미가 비어 있음. 덱이 떨어지면 버린 더미를 섞어 다시 씁니다.</div>')+'</div>';}
+function render(){if(!G){return renderSetup();}
+ ({choose:renderChoose,reveal:renderReveal,end:renderEnd})[G.phase]();}
+function renderSetup(){const saved=load();app.innerHTML=topbar()+'<div class="panel"><h2>새 경기</h2><div class="row"><label>플레이어 1 <input type="text" id="n0" value="홈"></label><label>플레이어 2 <input type="text" id="n1" value="원정"></label><label>하프당 라운드 <input type="text" id="rounds" value="9" style="width:60px"></label></div><p class="note">한 화면에서 양쪽을 다 조작하는 시뮬레이션 모드입니다. 시스템은 뒷면으로 4장씩, 플레이는 공용 덱에서 3장씩 뽑고 시작합니다. 라운드마다 수비 시스템 → 공격 시스템 → 두 플레이를 고르고 판정합니다.</p><div class="row"><button class="primary" onclick="startNew()">시작</button>'+(saved?'<button onclick="G=load();render()">이어하기 ('+h(saved.names.join(' vs '))+', '+(saved.half===1?'전반':'후반')+' '+saved.round+'R)</button>':'')+'</div></div>';}
+function startNew(){const n0=document.getElementById('n0').value.trim()||'홈',n1=document.getElementById('n1').value.trim()||'원정';const r=Math.max(1,Math.min(30,parseInt(document.getElementById('rounds').value,10)||9));newGame([n0,n1],r);render();}
+let sel={};
+// ---- 경기장 (위에서 본 그림). 절대 좌표: 왼쪽이 홈(0) 골문, 오른쪽이 원정(1) 골문. 공격자 기준 pos 를 절대 구역(0~4)으로
+function absZone(){return G.att===0?G.pos+2:2-G.pos;}
+function pitchSVG(){const z=absZone();const bx=100+z*200;
+ let zones='';for(let k=0;k<5;k++)zones+='<rect x="'+(k*200)+'" y="0" width="200" height="400" fill="'+(k%2?'#2f7a44':'#2b7040')+'"/>';
+ const lines='<rect x="8" y="8" width="984" height="384" fill="none" stroke="#dfe8dc" stroke-width="3"/><line x1="500" y1="8" x2="500" y2="392" stroke="#dfe8dc" stroke-width="3"/><circle cx="500" cy="200" r="60" fill="none" stroke="#dfe8dc" stroke-width="3"/><circle cx="500" cy="200" r="4" fill="#dfe8dc"/>'
+  +'<rect x="8" y="90" width="150" height="220" fill="none" stroke="#dfe8dc" stroke-width="3"/><rect x="8" y="150" width="55" height="100" fill="none" stroke="#dfe8dc" stroke-width="3"/><rect x="842" y="90" width="150" height="220" fill="none" stroke="#dfe8dc" stroke-width="3"/><rect x="937" y="150" width="55" height="100" fill="none" stroke="#dfe8dc" stroke-width="3"/>'
+  +'<rect x="0" y="165" width="8" height="70" fill="#f3efe4"/><rect x="992" y="165" width="8" height="70" fill="#f3efe4"/>';
+ const arrow=G.att===0?'<path d="M560 355 L640 355 L640 343 L665 360 L640 377 L640 365 L560 365 Z" fill="rgba(243,239,228,.55)"/>':'<path d="M440 355 L360 355 L360 343 L335 360 L360 377 L360 365 L440 365 Z" fill="rgba(243,239,228,.55)"/>';
+ const ball='<circle cx="'+bx+'" cy="200" r="22" fill="#f7f3e8" stroke="#1d2420" stroke-width="3"/><path d="M'+(bx-8)+' 190 l8 -6 l8 6 l-3 9 l-10 0 z" fill="#1d2420"/>';
+ const glow='<rect x="'+(z*200)+'" y="0" width="200" height="400" fill="rgba(233,182,47,.16)"/>';
+ return '<svg class="pitch" viewBox="0 0 1000 400" role="img" aria-label="경기장">'+zones+glow+lines+arrow+ball+'</svg>';}
+function zoneLabels(){const names=['홈 PA','홈 진영','중원','원정 진영','원정 PA'];const z=absZone();return '<div class="zonelabels">'+names.map((n,k)=>'<div'+(k===z?' style="color:var(--chalk);font-weight:600"':'')+'>'+n+'</div>').join('')+'</div>';}
+function scoreBar(){return '<div class="scorebar"><span>'+h(G.names[0])+'</span><b>'+G.score[0]+'</b><span class="rd">'+(G.half===1?'전반':'후반')+' '+G.round+'/'+G.rounds+'</span><b>'+G.score[1]+'</b><span>'+h(G.names[1])+'</span></div>';}
+// ---- 플레이어 구역 (원정 위, 홈 아래)
+function chooseStep(){if(!sel.defSys)return 1;if(!sel.attSys)return 2;return 3;}
+function playerZone(i,choosing){const p=P(i);const isAtt=G.att===i;const role=isAtt?'공격':'수비';const step=choosing?chooseStep():0;
+ const mini=(id,pickable,selKey)=>{const c=CARD[id];const stand=(c.side==='A'?p.standA:p.standD)===id;return '<div class="mini-wrap">'+cardHTML(c,{mini:true,pick:pickable,sel:pickable&&sel[selKey]===id,tag:stand?'세워 둠':'',dim:!pickable&&choosing})+((choosing&&c.type==='P'&&p.redrawLeft>0&&!p.redrewThisRound)?'<button class="small" data-redraw="'+id+'" data-player="'+i+'">버리고 뽑기</button>':'')+'</div>';};
+ const sysA=p.attSys.map(id=>mini(id,choosing&&isAtt&&step>=2,'attSys')).join(''),sysD=p.defSys.map(id=>mini(id,choosing&&!isAtt&&step>=1,'defSys')).join('');
+ const handA=p.handA.map(id=>mini(id,choosing&&isAtt&&step>=3,'attPlay')).join(''),handD=p.handD.map(id=>mini(id,choosing&&!isAtt&&step>=3,'defPlay')).join('');
+ return '<div class="zone '+(i===1?'away':'home')+'"><div class="zh"><span><b>'+h(G.names[i])+'</b> · 이번 라운드 '+role+'</span><span>교체 뽑기 남은 '+p.redrawLeft+'회'+(p.redrewThisRound?' (사용함)':'')+'</span></div>'
+  +'<div class="zrow"><div class="zgroup"><div class="gl">공격 시스템</div><div class="minis">'+sysA+'</div></div><div class="zgroup"><div class="gl">수비 시스템</div><div class="minis">'+sysD+'</div></div></div>'
+  +'<div class="zrow" style="margin-top:6px"><div class="zgroup"><div class="gl">공격 플레이 손패</div><div class="minis h3">'+(handA||'<div class="note">비어 있음</div>')+'</div></div><div class="zgroup"><div class="gl">수비 플레이 손패</div><div class="minis h3">'+(handD||'<div class="note">비어 있음</div>')+'</div></div></div></div>';}
+// ---- 가운데 슬롯: 공격 편(공격자 쪽)과 수비 편
+function slotCol(i,choosing){const isAtt=G.att===i;const p=P(i);
+ const sysId=isAtt?(choosing?sel.attSys:p.standA):(choosing?sel.defSys:p.standD);const playId=isAtt?(choosing?sel.attPlay:G.pending.attPlay):(choosing?sel.defPlay:G.pending.defPlay);
+ const box=(id,label,empty,key)=>'<div><div class="sl">'+label+'</div>'+(id?'<div class="slotbox filled" data-clear="'+key+'">'+cardHTML(CARD[id],{slot:true,pick:choosing})+'</div>':'<div class="slotbox">'+empty+'</div>')+'</div>';
+ const step=choosing?chooseStep():0;
+ const roleLabel=(isAtt?'공격':'수비')+' · '+h(G.names[i]);
+ const sysEmpty=isAtt?(step>=2?'② 공격 시스템을 고르세요':'수비 시스템 다음에'):'① 수비 시스템을 고르세요';const playEmpty=step>=3?((isAtt?'공격':'수비')+' 플레이를 손패에서 고르세요'+((isAtt?p.handA:p.handD).length?'':' (없음 → 빈 플레이)')):'시스템 다음에';
+ return '<div class="slotcol">'+box(sysId,roleLabel+' 시스템',sysEmpty,isAtt?'attSys':'defSys')+box(playId,roleLabel+' 플레이',playEmpty,isAtt?'attPlay':'defPlay')+'</div>';}
+function renderBoard(){const choosing=G.phase==='choose';const a=G.att,d=1-a,pa=P(a),pd=P(d);
+ if(choosing){if(!pd.defSys.includes(sel.defSys))sel.defSys=null;if(!pa.attSys.includes(sel.attSys))sel.attSys=null;
+  if(!sel.attPlay||!pa.handA.includes(sel.attPlay))sel.attPlay=null;if(!sel.defPlay||!pd.handD.includes(sel.defPlay))sel.defPlay=null;}
+ const step=choosing?chooseStep():0;
+ const ready=choosing&&sel.defSys&&sel.attSys&&(sel.attPlay||!pa.handA.length)&&(sel.defPlay||!pd.handD.length);
+ let R=null,b0=null,o=null;if(!choosing){R=currentJudge().R;if(G.roll){b0=band(G.roll,R.B);o=R.outcome(b0,G.pos);}}
+ // 액션 영역
+ let actions='';
+ if(choosing){const st=(n,txt)=>'<span style="'+(step===n?'color:var(--accent);font-weight:700':'color:var(--muted)')+'">'+txt+'</span>';
+  const guide=step===1?'세워 둔 것을 그대로 쓰려면 그 카드를 누르세요':step===2?'수비 시스템을 보고 공격 시스템을 세우세요':'두 시스템을 보고 플레이를 고르면 동시에 뒤집습니다';
+  actions='<div style="display:flex;flex-direction:column;align-items:center;gap:4px"><div style="font-size:13px">'+st(1,'① '+h(G.names[d])+' 수비 시스템')+' → '+st(2,'② '+h(G.names[a])+' 공격 시스템')+' → '+st(3,'③ 두 플레이')+'</div><div class="note">'+guide+'</div></div><button class="primary" id="confirm" '+(ready?'':'disabled')+'>판정하기</button>';}
+ else if(G.roll==null)actions='<span class="note">마커가 움직였습니다.</span><button class="primary" onclick="rollDice()">d20 굴리기</button>';
+ else{let s;if(o.kind==='goal')s='골!';else if(o.kind==='concede')s='역습 실점!';else if(o.kind==='saved')s='골이지만 선방. 위치 2 교착';else if(o.kind==='swap')s='공격권 교대. '+h(G.names[d])+' 이(가) 위치 '+o.np+' 에서 공격';else s='위치 '+o.np;
+  actions='<div class="dice">'+G.roll+'</div><div class="bigres">'+BANDS[b0]+' — '+s+'</div>'+(o.notes.length?'<div class="note">'+o.notes.join(' · ')+'</div>':'')+'<button class="primary" onclick="applyRound()">다음 라운드</button>';}
+ // 판정 트랙
+ let track='';{const B=R?R.B:BASE;let cells='';for(let r=1;r<=20;r++){const b=band(r,B);cells+='<div class="tc'+(G.roll===r?' hit':'')+'" style="background:'+BC[b]+'">'+r+'</div>';}
+  let marks='';for(let i=0;i<4;i++)marks+='<div class="mk" style="left:'+(B[i]/20*100)+'%">'+MK[i]+'<small>'+B[i]+'</small></div>';
+  const cnt=[0,0,0,0,0];for(let r=1;r<=20;r++)cnt[band(r,B)]++;
+  track='<div class="trackbox"><div class="sl" style="font-family:Oswald,sans-serif;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:4px">판정 트랙 '+(R?'(이동 후)':'(기본 4/8/12/16)')+'</div><div class="track">'+cells+'</div><div class="marks">'+marks+'</div><div class="legend">'+BANDS.map((n,i)=>'<span><i style="background:'+BC[i]+'"></i>'+n+' '+(cnt[i]*5)+'%</span>').join('')+'</div></div>';}
+ let html=topbar(choosing?'<button class="small" onclick="autoChoice()">무작위 채우기</button>':'');
+ html+='<div class="board">'+playerZone(1,choosing)
+  +'<div class="center">'+slotCol(1,choosing)
+  +'<div class="pitchwrap">'+scoreBar()+pitchSVG()+zoneLabels()+'<div class="actions">'+actions+'</div>'+track+'</div>'
+  +slotCol(0,choosing)+'</div>'
+  +playerZone(0,choosing)+'</div>';
+ // 판정 설명 (판정 뒤)
+ if(R){html+='<div class="panel"><h3>맞대기 (공격 기준)</h3>'+(R.notes.length?'<div class="note">효과: '+R.notes.join(' · ')+'</div>':'')+'<div class="why">'+R.why.map(w=>'<b style="color:'+COL[w.t]+'">'+TR[w.t]+'</b><span>'+w.an+' vs '+w.dn+' → '+w.txt+'</span>').join('')+'</div>'
+  +'<h3>마커 이동 (① 템포+공간 · ② 템포+조직 · ③ 조직+폭 · ④ 폭+공간, 많이 움직이는 순)</h3><div class="note">'+R.mlog.join(' &nbsp;·&nbsp; ')+(R.eff.length?' &nbsp;·&nbsp; '+R.eff.join(' · '):'')+'</div>';
+  const p=G.pos;const describe=x=>x.kind==='goal'?'골':x.kind==='concede'?'실점(역습)':x.kind==='saved'?'선방, 위치 2 교착':x.kind==='swap'?'교대, 상대 위치 '+x.np:'위치 '+x.np;
+  html+='<table class="otab"><tr><th style="text-align:left;padding-right:14px">결과</th><th style="text-align:left">공 위치 '+p+' 에서</th></tr>'+BANDS.map((n,i)=>{const x=R.outcome(i,p);return '<tr><td><i style="background:'+BC[i]+'"></i>'+n+'</td><td>'+describe(x)+(x.notes.length?' ('+x.notes.join(', ')+')':'')+'</td></tr>';}).join('')+'</table></div>';}
+ html+='<div class="row"><div style="flex:1;min-width:280px">'+deckPanel('A')+'</div><div style="flex:1;min-width:280px">'+deckPanel('D')+'</div></div>'+(G.log.length?'<div class="panel"><h3>기록</h3><div class="log">'+G.log.slice(-8).reverse().map(h).join('<br>')+'</div></div>':'');
+ app.innerHTML=html;
+ if(choosing){app.querySelectorAll('.zone .card.pick').forEach(el=>el.addEventListener('click',()=>{const id=el.dataset.id;const stp=chooseStep();
+   if(pd.defSys.includes(id)){sel.defSys=id;render();return;}if(pa.attSys.includes(id)&&stp>=2){sel.attSys=id;render();return;}
+   if(stp>=3){if(pa.handA.includes(id)){sel.attPlay=sel.attPlay===id?null:id;render();return;}if(pd.handD.includes(id)){sel.defPlay=sel.defPlay===id?null:id;render();}}}));
+  app.querySelectorAll('.slotbox.filled').forEach(el=>el.addEventListener('click',()=>{const k=el.dataset.clear;if(k==='attPlay'||k==='defPlay'){sel[k]=null;render();}}));
+  app.querySelectorAll('button[data-redraw]').forEach(el=>el.addEventListener('click',()=>{const id=el.dataset.redraw,i=+el.dataset.player;if(sel.attPlay===id)sel.attPlay=null;if(sel.defPlay===id)sel.defPlay=null;redraw(i,id);}));
+  const btn=document.getElementById('confirm');if(btn)btn.addEventListener('click',()=>{const s=sel;sel={};submitRound(s.defSys,s.attSys,s.attPlay,s.defPlay);});}}
+function renderChoose(){renderBoard();}
+function renderReveal(){renderBoard();}
+function autoChoice(){const a=G.att,d=1-a,pa=P(a),pd=P(d);
+ sel.defSys=(pd.standD&&Math.random()<0.7)?pd.standD:pd.defSys[rnd(4)];sel.attSys=(pa.standA&&Math.random()<0.7)?pa.standA:pa.attSys[rnd(4)];
+ sel.attPlay=pa.handA.length?pa.handA[rnd(pa.handA.length)]:null;sel.defPlay=pd.handD.length?pd.handD[rnd(pd.handD.length)]:null;render();}
+function renderEnd(){const w=G.score[0]===G.score[1]?'무승부':(G.score[0]>G.score[1]?G.names[0]:G.names[1])+' 승리';
+ app.innerHTML=topbar()+'<div class="panel"><h2>경기 종료: '+h(w)+'</h2><div class="status"><span>'+h(G.names[0])+' <b>'+G.score[0]+'</b> : <b>'+G.score[1]+'</b> '+h(G.names[1])+'</span></div></div><div class="panel"><h3>기록</h3><div class="log" style="max-height:none">'+G.log.map(h).join('<br>')+'</div></div><div class="panel"><button class="primary" onclick="G=null;try{localStorage.removeItem(KEY)}catch(e){};render()">새 경기</button></div>';}
+// ===== 자동 진행 (테스트용: ?auto=1) =====
+function autoPlayAll(stopAt){newGame(['홈','원정'],9);let guard=0;
+ while(G.phase!=='end'&&guard++<5000){
+  if(stopAt&&G.phase===stopAt&&G.log.length>4){if(stopAt==='reveal'&&!G.roll)rollDice();render();return G;}
+  if(G.phase==='choose'){const a=G.att,d=1-a,pa=P(a),pd=P(d);for(const i of [a,d]){const p=P(i);if(p.redrawLeft>0&&Math.random()<0.15){const hd=p.handA.concat(p.handD);if(hd.length)redraw(i,hd[rnd(hd.length)]);}}
+   submitRound((pd.standD&&Math.random()<0.7)?pd.standD:pd.defSys[rnd(4)],(pa.standA&&Math.random()<0.7)?pa.standA:pa.attSys[rnd(4)],pa.handA.length?pa.handA[rnd(pa.handA.length)]:null,pd.handD.length?pd.handD[rnd(pd.handD.length)]:null);continue;}
+  if(G.phase==='reveal'){rollDice();applyRound();continue;}}
+ return G;}
+try{if(location.search.includes('auto=1')){const m=location.search.match(/stop=(\w+)/);const r=autoPlayAll(m?m[1]:null);if(m){/* 화면 확인용 */}else document.body.insertAdjacentHTML('afterbegin','<pre id="autoresult">AUTO OK phase='+r.phase+' score='+r.score.join('-')+' rounds='+r.log.length+'</pre>');}else{G=null;render();}}catch(e){document.body.insertAdjacentHTML('afterbegin','<pre id="autoresult">AUTO ERROR '+h(String(e&&e.stack||e))+'</pre>');}
+</script>
